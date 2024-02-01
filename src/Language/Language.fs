@@ -20,13 +20,16 @@ module Matchers = begin
         | (Expression.EList ((Expression.EAtom "lambda")::(Expression.EList args)::body::[]))::rest -> Some (args, body, rest)
         | _ -> None
         
-    let (|IfThenElse|_|) (exprs: Expression.t list) =
+    let (|IfThenElse|_|) (exprs: Expression.t) =
         match exprs with
-        | (Expression.EAtom "if")::condition::thenBranch::[elseBranch] -> Some (condition, thenBranch, elseBranch)
+        | Expression.EList((Expression.EAtom "if")::condition::thenBranch::[elseBranch]) ->
+            Some (condition, thenBranch, elseBranch)
         | _ -> None
-    let (|IfThen|_|) (exprs: Expression.t list) =
+        
+    let (|IfThen|_|) (exprs: Expression.t) =
         match exprs with
-        | (Expression.EAtom "if")::condition::thenBranch::[] -> Some (condition, thenBranch)
+        | Expression.EList((Expression.EAtom "if")::condition::thenBranch::[]) ->
+            Some (condition, thenBranch)
         | _ -> None
 
     let (|Application|_|) (expr: Expression.t) =
@@ -55,7 +58,9 @@ module Generator = begin
         | Expression.EIfThenElse (_, thenValue, Some elseValue) ->
             match expressionCLRType env false thenValue with
             | t when t = expressionCLRType env false elseValue -> t
-            | _ -> failwith("expected 'then' and 'else' branches to have same type")
+            | _ -> failwith("An if statement expects the 'then' and 'else' branches to be of the same type.")
+        | Expression.EIfThenElse (_, thenValue, None) ->
+            expressionCLRType env false thenValue
         | Expression.EApplication (Expression.EClosure (func, None), _) -> func.ReturnType
         | Expression.EApplication (Expression.EClosure (_, Some returnType), _) -> returnType
         | Expression.EApplication (x, _) -> expressionCLRType env true x
@@ -89,6 +94,10 @@ module Generator = begin
             match rest with
             | [ Expression.EList arguments; body ] ->
                 Expression.EAbstraction (List.map (function Expression.EAtom label -> label) arguments, expand body)
+        | IfThenElse (condition, thenBranch, elseBranch) ->
+            Expression.EIfThenElse (expand condition, expand thenBranch, (Some << expand) elseBranch)
+        | IfThen (condition, thenBranch) ->
+            Expression.EIfThenElse (expand condition, expand thenBranch, None)
         | Native (label, args) -> Expression.ENative (label, List.map expand args)
         | Application (func, args) ->
             let expandedFunc = expand func
@@ -102,10 +111,7 @@ module Generator = begin
                 List.map (function Expression.EAtom label -> label) arguments
                 |> fun labels -> (funcName, Expression.EAbstraction (labels, expand body))
                 |> Expression.EVariable
-        | Expression.EList (IfThenElse (condition, thenBranch, elseBranch)) ->
-            Expression.EIfThenElse (expand condition, expand thenBranch, (Some << expand) elseBranch)
-        | Expression.EList (IfThen (condition, thenBranch)) ->
-            Expression.EIfThenElse (expand condition, expand thenBranch, None)
+
         | Expression.EList elems ->
             (List.map expand >> Expression.EList) elems
         | otherwise -> otherwise
@@ -141,6 +147,7 @@ module Generator = begin
                     makeBlock generator target env [arg]) state arguments
             match operator with
             | "+" -> generator.Emit(OpCodes.Add); None, generator, target
+            | "=" -> generator.Emit(OpCodes.Ceq); None, generator, target
         
         | [Expression.EAbstraction (argumentNames, body)] ->
             let arguments = List.mapi (fun i _label -> Expression.EArgument i) argumentNames
@@ -178,6 +185,27 @@ module Generator = begin
             None, generator, target
         | [Expression.EClosure _ as closure] ->
             Some closure, generator, target
+
+        | [Expression.EIfThenElse (condition, thenBranch, Some elseBranch)] ->
+            let elseLabel = generator.DefineLabel()
+            let endLabel = generator.DefineLabel()
+            let None, generator, target = makeBlock generator target env [condition]
+            generator.Emit(OpCodes.Brfalse, elseLabel)
+            let None, generator, target = makeBlock generator target env [thenBranch]
+            generator.Emit(OpCodes.Br, endLabel)
+            generator.MarkLabel(elseLabel)
+            let None, generator, target = makeBlock generator target env [elseBranch]
+            generator.MarkLabel(endLabel)
+            None, generator, target
+
+        | [Expression.EIfThenElse (condition, thenBranch, None)] ->
+            let endLabel = generator.DefineLabel()
+            let None, generator, target = makeBlock generator target env [condition]
+            generator.Emit(OpCodes.Brfalse, endLabel)
+            let None, generator, target = makeBlock generator target env [thenBranch]
+            generator.MarkLabel(endLabel)
+            None, generator, target
+            
         | otherwise -> printfn "%A" otherwise; failwith "Not implemented"
 
     let compile generator target exprs =
@@ -199,6 +227,7 @@ module Generator = begin
         target
 
     let wrapper exprs: obj =
+        
         let assembly = AssemblyBuilder.DefineDynamicAssembly(AssemblyName("ChimeLisp"), AssemblyBuilderAccess.Run)
         let moduleBuilder = assembly.DefineDynamicModule("ChimeLisp")
         let typeBuilder = moduleBuilder.DefineType("ChimeLisp", TypeAttributes.Sealed ||| TypeAttributes.Public)
