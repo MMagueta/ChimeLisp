@@ -1,9 +1,53 @@
-#+TITLE: PerplexDB
+#+TITLE: Chime Lisp 🔔
 
+* About
 
-* Implementation list
+My friends started a book club over Build Your Own Lisp, so I started my very dialect.
 
-- [ ] Correlate logs with a message ID in the context for the kind of operation that raised it
-- [ ] On flush, before filling with blanks, sync old info with new info on the page
-- [ ] Allocate blob sector to store large data (images, JSON files, etc), keeping only a reference of it when the row is loaded on memory
-- [ ] Pagination is currently yielding 0 indexkeys for positions that do not exist, since I read the whole chunk (use physical count to eliminate empty pages, and mark the pages as empty)
+* Features [4/8]
+
+- [-] Target VMs
+  - [X] Target the .NET IL
+  - [ ] Target the [[https://github.com/Dr-Nekoma/chime][Chime VM]]
+- [X] Functions
+- [X] Variables
+- [X] Applications
+- [-] Expansion
+  - [ ] Macros
+  - [X] Expansion Function
+- [X] Basic Typing
+- [ ] System-F (omega) Type System
+- [ ] REPL
+  - [ ] Compile and replace defined methods
+
+* Examples
+
+#+BEGIN_SRC lisp  
+  [+ 1.5 2.0]
+#+END_SRC
+
+#+BEGIN_SRC lisp
+  [= 1 2]
+#+END_SRC
+
+#+BEGIN_SRC lisp
+  "Hello World! 🍬"
+#+END_SRC
+
+#+BEGIN_SRC lisp
+  [defun hello [x y]
+    [progn
+      [println [int->string y]]
+      [println x]]]
+  [hello "Hello" 1]
+#+END_SRC
+
+#+BEGIN_SRC lisp
+  [if [= 10 11]
+      [println "They are equal!"]
+    [println "They are not equal!"]]
+#+END_SRC
+
+#+BEGIN_SRC lisp
+  [[lambda [x] [+ x 1]] 1]
+#+END_SRC
