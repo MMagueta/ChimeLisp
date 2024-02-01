@@ -1,0 +1,9 @@
+**/bin
+**/obj
+**/*.o
+**/*.so
+**/*.db
+.DS_Store
+.fake
+.idea
+.vs

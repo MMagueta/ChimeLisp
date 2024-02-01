@@ -1,0 +1,50 @@
+{
+
+// Opens methods related to fslex.exe
+open FSharp.Text.Lexing
+
+let newline (lexbuf: LexBuffer<_>) = 
+  lexbuf.StartPos <- lexbuf.StartPos.NextLine
+
+}
+
+// Regular Expressions
+let whitespace = [' ' '\t']
+let newline = ('\n' | '\r' '\n')
+let leftLim = '['
+let rightLim = ']'
+let digit = ['0'-'9']
+let lower_letter = ['a'-'z']
+let upper_letter = ['A'-'Z']
+let letter = lower_letter | upper_letter
+let signed_integer = '-' ['0'-'9'] ['0'-'9']*
+let unsigned_integer = ['0'-'9'] ['0'-'9']*
+let integer = signed_integer | unsigned_integer
+let float = integer '.' unsigned_integer
+let symbol = ['!' '#' '$' '%' '&' '*' '+' '-' '.' '/' ':' '<' '=' '>' '?' '@' '^' '_' '`' '|' '~' ''']
+let identifier = letter (letter | '_' | symbol)*
+let quote = '\''
+// let upper_ident = upper_letter (letter '_')*
+// let type' = ("INTEGER"|"VARCHAR")
+
+rule tokenStream = parse
+// --------------------------
+// | type'         { Parser.TYPE' (LexBuffer<_>.LexemeString lexbuf) }
+| identifier+	{ Parser.IDENTIFIER (LexBuffer<_>.LexemeString lexbuf) }
+| symbol	{ Parser.SYMBOL (LexBuffer<_>.LexemeString lexbuf) }
+| integer       { Parser.LITERAL_INTEGER (int <| (LexBuffer<_>.LexemeString lexbuf)) }
+| float       { Parser.LITERAL_FLOAT (float32 <| (LexBuffer<_>.LexemeString lexbuf)) }
+| '"'           { read_string "" false lexbuf } 
+// --------------------------
+| whitespace { tokenStream lexbuf }
+| newline    { newline lexbuf; tokenStream lexbuf }
+| leftLim    { Parser.LEFT_LIM }
+| rightLim   { Parser.RIGHT_LIM }
+// --------------------------
+| _    		 { failwith ("ParseError" + LexBuffer<_>.LexemeString lexbuf) }
+| eof   	 { Parser.EOF }
+and read_string str ignorequote =
+  parse
+  | '"'           { if ignorequote then (read_string (str+"\\\"") false lexbuf) else Parser.LITERAL_STRING (str) }
+  | '\\'          { read_string str true lexbuf }
+  | [^ '"' '\\']+ { read_string (str+(LexBuffer<_>.LexemeString lexbuf)) false lexbuf }

@@ -1,0 +1,9 @@
+#+TITLE: PerplexDB
+
+
+* Implementation list
+
+- [ ] Correlate logs with a message ID in the context for the kind of operation that raised it
+- [ ] On flush, before filling with blanks, sync old info with new info on the page
+- [ ] Allocate blob sector to store large data (images, JSON files, etc), keeping only a reference of it when the row is loaded on memory
+- [ ] Pagination is currently yielding 0 indexkeys for positions that do not exist, since I read the whole chunk (use physical count to eliminate empty pages, and mark the pages as empty)
