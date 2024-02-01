@@ -99,10 +99,7 @@ module Generator = begin
         | IfThen (condition, thenBranch) ->
             Expression.EIfThenElse (expand condition, expand thenBranch, None)
         | Native (label, args) -> Expression.ENative (label, List.map expand args)
-        | Application (func, args) ->
-            let expandedFunc = expand func
-            let expandedArgs = List.map expand args
-            Expression.EApplication (expandedFunc, expandedArgs)
+
         | Expression.EList (Expression.EAtom "defvar" :: Expression.EAtom varName::[value]) ->
             Expression.EVariable (varName, expand value)
         | Expression.EList (Expression.EAtom "defun" ::Expression.EAtom funcName::rest) ->
@@ -111,14 +108,20 @@ module Generator = begin
                 List.map (function Expression.EAtom label -> label) arguments
                 |> fun labels -> (funcName, Expression.EAbstraction (labels, expand body))
                 |> Expression.EVariable
-
+        | Application (func, args) ->
+            let expandedFunc = expand func
+            let expandedArgs = List.map expand args
+            Expression.EApplication (expandedFunc, expandedArgs)
         | Expression.EList elems ->
             (List.map expand >> Expression.EList) elems
         | otherwise -> otherwise
 
 
-    let rec makeBlock (generator: ILGenerator) (target: TypeBuilder) env expr: Expression.t option * ILGenerator * TypeBuilder =
+    let rec makeBlock (generator: ILGenerator) (target: TypeBuilder) env expr: Expression.t option * ILGenerator * TypeBuilder * Map<_,_> =
         match expr with
+        | (Expression.EVariable (label, value))::rest ->
+            makeBlock generator target (Map.add label value env) rest
+            
         | [Expression.EAtom label] ->
             match Map.tryFind label env with
             | Some value -> makeBlock generator target env [value]
@@ -126,28 +129,28 @@ module Generator = begin
 
         | [Expression.EArgument index] -> 
             generator.Emit(OpCodes.Ldarg, index)
-            None, generator, target
+            None, generator, target, env
 
         | [Expression.EInteger n] -> 
             generator.Emit(OpCodes.Ldc_I4, n)
-            None, generator, target
+            None, generator, target, env
 
         | [Expression.EFloat n] -> 
             generator.Emit(OpCodes.Ldc_R4, n)
-            None, generator, target
+            None, generator, target, env
 
         | [Expression.EString s] -> 
             generator.Emit(OpCodes.Ldstr, s)
-            None, generator, target
+            None, generator, target, env
 
         | [Expression.ENative (operator, arguments)] ->
-            let state: Expression.t option * ILGenerator * TypeBuilder = (None, generator, target)
-            let None, generator, target =
-                List.fold (fun (None, generator, target) (arg: Expression.t) ->
+            let state = (None, generator, target, env)
+            let None, generator, target, _ =
+                List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
                     makeBlock generator target env [arg]) state arguments
             match operator with
-            | "+" -> generator.Emit(OpCodes.Add); None, generator, target
-            | "=" -> generator.Emit(OpCodes.Ceq); None, generator, target
+            | "+" -> generator.Emit(OpCodes.Add); None, generator, target, env
+            | "=" -> generator.Emit(OpCodes.Ceq); None, generator, target, env
         
         | [Expression.EAbstraction (argumentNames, body)] ->
             let arguments = List.mapi (fun i _label -> Expression.EArgument i) argumentNames
@@ -162,51 +165,51 @@ module Generator = begin
                                     MethodAttributes.Static ||| MethodAttributes.Public,
                                     bodyType,
                                     [| for _ in 1..arguments.Length do typeof<int> |])
-            let None, closure, target = 
+            let None, closure, target, env = 
                 makeBlock (lambdaMethodBuilder.GetILGenerator()) target newEnv [body]
             closure.Emit(OpCodes.Ret)
-            Some <| Expression.EClosure (lambdaMethodBuilder, Some bodyType), generator, target
+            Some <| Expression.EClosure (lambdaMethodBuilder, Some bodyType), generator, target, env
             
         | [Expression.EList (x::rest)] ->
             makeBlock generator target env [Expression.EApplication (x, rest)]
 
         | [Expression.EApplication (func, args)] ->
             // TODO: Merge the environments later
-            let Some (Expression.EClosure (methodBuilder, _)), _, target =
+            let Some (Expression.EClosure (methodBuilder, _)), _, target, newEnv =
                 makeBlock generator target env [func]
-            let None, generator, target =
-                List.fold (fun (None, generator, target)
+            let None, generator, target, _ =
+                List.fold (fun (None, generator, target, _)
                                argumentToCompile ->
                         makeBlock generator target env [argumentToCompile])
-                        (None, generator, target)
+                        (None, generator, target, newEnv)
                         args
             generator.Emit(OpCodes.Call, methodBuilder)
 
-            None, generator, target
+            None, generator, target, newEnv
         | [Expression.EClosure _ as closure] ->
-            Some closure, generator, target
+            Some closure, generator, target, env
 
         | [Expression.EIfThenElse (condition, thenBranch, Some elseBranch)] ->
             let elseLabel = generator.DefineLabel()
             let endLabel = generator.DefineLabel()
-            let None, generator, target = makeBlock generator target env [condition]
+            let None, generator, target, _ = makeBlock generator target env [condition]
             generator.Emit(OpCodes.Brfalse, elseLabel)
-            let None, generator, target = makeBlock generator target env [thenBranch]
+            let None, generator, target, _ = makeBlock generator target env [thenBranch]
             generator.Emit(OpCodes.Br, endLabel)
             generator.MarkLabel(elseLabel)
-            let None, generator, target = makeBlock generator target env [elseBranch]
+            let None, generator, target, _ = makeBlock generator target env [elseBranch]
             generator.MarkLabel(endLabel)
-            None, generator, target
+            None, generator, target, env
 
         | [Expression.EIfThenElse (condition, thenBranch, None)] ->
             let endLabel = generator.DefineLabel()
-            let None, generator, target = makeBlock generator target env [condition]
+            let None, generator, target, _ = makeBlock generator target env [condition]
             generator.Emit(OpCodes.Brfalse, endLabel)
-            let None, generator, target = makeBlock generator target env [thenBranch]
+            let None, generator, target, _ = makeBlock generator target env [thenBranch]
             generator.MarkLabel(endLabel)
-            None, generator, target
+            None, generator, target, env
             
-        | otherwise -> printfn "%A" otherwise; failwith "Not implemented"
+        | otherwise -> printfn "------------OTHERWISE------------\n%A" otherwise; printfn "------------OTHERWISE------------"; failwith "Not implemented"
 
     let compile generator target exprs =
         let prelude =
@@ -218,8 +221,9 @@ module Generator = begin
         
         printfn "%A" exprs
         
-        let _, generator, target = makeBlock generator target prelude exprs
-        let lastType = codeReturnType prelude exprs
+        let _, generator, target, finalEnv = makeBlock generator target prelude exprs
+        // TODO: Right now final env is required because of definitions not being present in the prelude
+        let lastType = codeReturnType finalEnv exprs
         if lastType.IsValueType && lastType <> typeof<Void>
         then generator.Emit(OpCodes.Pop)
         generator.Emit(OpCodes.Ldc_I4, 0)

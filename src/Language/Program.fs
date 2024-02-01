@@ -114,49 +114,49 @@ module Main =
             let concreteEntry = typeBuilder.CreateType()
             concreteEntry
         
-        generateIL()
-        |> _.GetMethod("Main").Invoke((), [|0; ([||]: string array)|])
-        |> printfn "%A"
+        // generateIL()
+        // |> _.GetMethod("Main").Invoke((), [|0; ([||]: string array)|])
+        // |> printfn "%A"
 
-        // generateAST "[+ 1.5 2.0]"
-        // |> List.map Language.Generator.expand
-        // |> Language.Generator.wrapper
-        // |> ignore
+        generateAST "[+ 1.5 2.0]"
+        |> List.map Language.Generator.expand
+        |> Language.Generator.wrapper
+        |> ignore
         
-        // generateAST "[lambda [x] [+ 1 1]]"
-        // |> List.map Language.Generator.expand
-        // |> Language.Generator.wrapper
-        // |> ignore
+        generateAST "[lambda [x] [+ 1 1]]"
+        |> List.map Language.Generator.expand
+        |> Language.Generator.wrapper
+        |> ignore
 
-        // generateAST "[[lambda [x] [+ x 1]] 1]"
-        // |> List.map Language.Generator.expand
-        // |> Language.Generator.wrapper
-        // |> ignore
+        generateAST "[[lambda [x] [+ x 1]] 1]"
+        |> List.map Language.Generator.expand
+        |> Language.Generator.wrapper
+        |> ignore
 
-        // generateAST "[println [int->string [[lambda [x] [+ x 1]] 1]]]"
-        // |> List.map Language.Generator.expand
-        // |> Language.Generator.wrapper
-        // |> ignore
+        generateAST "[println [int->string [[lambda [x] [+ x 1]] 1]]]"
+        |> List.map Language.Generator.expand
+        |> Language.Generator.wrapper
+        |> ignore
 
-        // generateAST "[if [= 10 11]
-        //                  [println \"They are equal!\"]
-        //               [println \"They are not equal!\"]]"
-        // |> List.map Language.Generator.expand
-        // |> Language.Generator.wrapper
-        // |> ignore
+        generateAST "[if [= 10 11]
+                         [println \"They are equal!\"]
+                      [println \"They are not equal!\"]]"
+        |> List.map Language.Generator.expand
+        |> Language.Generator.wrapper
+        |> ignore
 
-        // generateAST "[if [= 10 10]
-        //                  [println \"They are equal!\"]]"
-        // |> List.map Language.Generator.expand
-        // |> Language.Generator.wrapper
-        // |> ignore
+        generateAST "[if [= 10 10]
+                         [println \"They are equal!\"]]"
+        |> List.map Language.Generator.expand
+        |> Language.Generator.wrapper
+        |> ignore
 
-        // generateAST "[defun hello [x]
-        //                  [println [int->string x]]]
-        //              [hello 1]"
-        // |> List.map Language.Generator.expand
-        // |> Language.Generator.wrapper
-        // |> ignore
+        generateAST "[defun hello [x]
+                         [println [int->string x]]]
+                     [hello 1]"
+        |> List.map Language.Generator.expand
+        |> Language.Generator.wrapper
+        |> ignore
 
 
         0
