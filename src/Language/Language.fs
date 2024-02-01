@@ -228,16 +228,16 @@ module Generator = begin
         then generator.Emit(OpCodes.Pop)
         generator.Emit(OpCodes.Ldc_I4, 0)
         generator.Emit(OpCodes.Ret)
-        target
+        target, finalEnv
 
-    let wrapper exprs: obj =
+    let wrapper exprs =
         
         let assembly = AssemblyBuilder.DefineDynamicAssembly(AssemblyName("ChimeLisp"), AssemblyBuilderAccess.Run)
         let moduleBuilder = assembly.DefineDynamicModule("ChimeLisp")
         let typeBuilder = moduleBuilder.DefineType("ChimeLisp", TypeAttributes.Sealed ||| TypeAttributes.Public)
         let entry = typeBuilder.DefineMethod("Main", MethodAttributes.Static ||| MethodAttributes.Public, typeof<int>, [|typeof<int>; typeof<string array>|])
-        let target = compile (entry.GetILGenerator()) typeBuilder exprs
-        target.CreateType().GetMethod("Main").Invoke((), [|0; ([||]: string array)|])
+        let target, finalEnv = compile (entry.GetILGenerator()) typeBuilder exprs
+        target.CreateType().GetMethod("Main").Invoke((), [|0; ([||]: string array)|]), finalEnv
         
 end
 

@@ -1,4 +1,4 @@
-namespace PerplexDB.Language
+namespace Language
 
 module Main =
     open System.IO
@@ -6,11 +6,6 @@ module Main =
 
     open System.Reflection
     open System.Reflection.Emit
-
-    let generateAST text =
-        let lexbuf = LexBuffer<char>.FromString text
-        let ast = Parser.parse Lexer.tokenStream lexbuf
-        ast
 
     [<EntryPoint>]
     let main _ =
@@ -118,45 +113,46 @@ module Main =
         // |> _.GetMethod("Main").Invoke((), [|0; ([||]: string array)|])
         // |> printfn "%A"
 
-        generateAST "[+ 1.5 2.0]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
+        // REPL.generateAST "[+ 1.5 2.0]"
+        // |> List.map Language.Generator.expand
+        // |> Language.Generator.wrapper
+        // |> ignore
         
-        generateAST "[lambda [x] [+ 1 1]]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
+        // REPL.generateAST "[lambda [x] [+ 1 1]]"
+        // |> List.map Language.Generator.expand
+        // |> Language.Generator.wrapper
+        // |> ignore
 
-        generateAST "[[lambda [x] [+ x 1]] 1]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
+        // REPL.generateAST "[[lambda [x] [+ x 1]] 1]"
+        // |> List.map Language.Generator.expand
+        // |> Language.Generator.wrapper
+        // |> ignore
 
-        generateAST "[println [int->string [[lambda [x] [+ x 1]] 1]]]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
+        // REPL.generateAST "[println [int->string [[lambda [x] [+ x 1]] 1]]]"
+        // |> List.map Language.Generator.expand
+        // |> Language.Generator.wrapper
+        // |> ignore
 
-        generateAST "[if [= 10 11]
-                         [println \"They are equal!\"]
-                      [println \"They are not equal!\"]]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
+        // REPL.generateAST "[if [= 10 11]
+        //                  [println \"They are equal!\"]
+        //               [println \"They are not equal!\"]]"
+        // |> List.map Language.Generator.expand
+        // |> Language.Generator.wrapper
+        // |> ignore
 
-        generateAST "[if [= 10 10]
-                         [println \"They are equal!\"]]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
+        // REPL.generateAST "[if [= 10 10]
+        //                  [println \"They are equal!\"]]"
+        // |> List.map Language.Generator.expand
+        // |> Language.Generator.wrapper
+        // |> ignore
 
-        generateAST "[defun hello [x]
-                         [println [int->string x]]]
-                     [hello 1]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
+        // REPL.generateAST "[defun hello [x]
+        //                  [println [int->string x]]]
+        //              [hello 1]"
+        // |> List.map Language.Generator.expand
+        // |> Language.Generator.wrapper
+        // |> ignore
 
+        REPL.repl()
 
         0

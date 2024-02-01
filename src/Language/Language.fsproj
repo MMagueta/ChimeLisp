@@ -16,6 +16,7 @@
     </FsLex>
     <Compile Include="Parser.fs" />
     <Compile Include="Lexer.fs" />
+    <Compile Include="REPL.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
