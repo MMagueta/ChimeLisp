@@ -244,7 +244,7 @@ module Generator = begin
         let _, generator, target, finalEnv = makeBlock generator target prelude None exprs
         // TODO: Right now final env is required because of definitions not being present in the prelude
         let lastType = codeReturnType finalEnv exprs
-        if lastType.IsValueType && lastType <> typeof<Void>
+        if (lastType.IsValueType || lastType = typeof<string>) && lastType <> typeof<Void>
         then generator.Emit(OpCodes.Pop)
         generator.Emit(OpCodes.Ldc_I4, 0)
         generator.Emit(OpCodes.Ret)

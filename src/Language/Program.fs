@@ -162,6 +162,11 @@ module Main =
         |> Language.Generator.wrapper
         |> ignore
 
+        REPL.generateAST "\"Hello World! 🍬\""
+        |> List.map Language.Generator.expand
+        |> Language.Generator.wrapper
+        |> ignore
+
         //REPL.repl()
 
         0
