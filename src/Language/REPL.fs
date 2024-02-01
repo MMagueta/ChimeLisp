@@ -2,12 +2,6 @@ namespace Language
 
 module REPL = begin
     open FSharp.Text.Lexing
-    
-    let generateAST text =
-        let lexbuf = LexBuffer<char>.FromString text
-        let ast = Parser.parse Lexer.tokenStream lexbuf
-        ast
-
     let repl () =
         let rec loop text env =
             printf "🔔."
@@ -19,7 +13,9 @@ module REPL = begin
                     loop (text + line) env
                 else
                     let result, env =
-                        generateAST text
+                        text
+                        |> LexBuffer<char>.FromString
+                        |> Parser.parse Lexer.tokenStream
                         |> List.map Language.Generator.expand
                         |> Language.Generator.wrapper
                     // printfn "%A" result

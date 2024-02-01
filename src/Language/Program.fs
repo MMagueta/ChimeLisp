@@ -1,65 +1,21 @@
 namespace Language
 
-module Main =
-    open System.IO
+module Parser = begin
     open FSharp.Text.Lexing
+    
+    let generateAST text =
+        let lexbuf = LexBuffer<char>.FromString text
+        let ast = Parser.parse Lexer.tokenStream lexbuf
+        ast 
+end
 
+module Main =
     open System.Reflection
     open System.Reflection.Emit
 
     [<EntryPoint>]
     let main _ =
-        
-        // let ast = generateAST "[lambda [x] [+ x 1]] [lambda [y] [+ y 1]]"
-        
-        // generateAST ""
-        // |> Language.Expression.expand Map.empty
-        // |> Language.Expression.compile Map.empty
-        // |> _.GetMethod("Main").Invoke((), [|0; ([||]: string array)|])
-        // |> ignore
-        
-        // let expanded =
-            // generateAST "[+ 1 2]"
-            // |> Language.Expression.expand Map.empty
-
-        // printfn "%A" expanded
-            
-        // expanded |> Language.Expression.compile Map.empty
-        // |> _.GetMethod("Main").Invoke((), [|0; ([||]: string array)|])
-        // |> ignore
-        
-        // generateIL()
-        // |> _.GetMethod("Main").Invoke((), [|0; ([||]: string array)|])
-        // |> printfn "%A"
         (*
-        generateAST "[println \"Hello World! :)\"]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> printfn "%A"
-
-        generateAST "[println [+ 1.5 2.0 1.0]]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> printfn "%A"
-        
-        generateAST "[println [/ 2 [+ 1 2]]]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> printfn "%A"
-
-        generateAST "[if [= 10 10]
-                         [println \"They are equal!\"]
-                      [println \"They are not equal!\"]]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> printfn "%A"
-        
-        generateAST "[defun abc [x] [+ x 1]]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> printfn "%A"
-        *)
-        
         let generateIL () =
             let assembly = AssemblyBuilder.DefineDynamicAssembly(AssemblyName("Chimelisp.exe"), AssemblyBuilderAccess.Run)
             let mo = assembly.DefineDynamicModule("Chimelisp.exe")
@@ -109,64 +65,12 @@ module Main =
             let concreteEntry = typeBuilder.CreateType()
             concreteEntry
         
-        // generateIL()
-        // |> _.GetMethod("Main").Invoke((), [|0; ([||]: string array)|])
-        // |> printfn "%A"
+        generateIL()
+        |> _.GetMethod("Main").Invoke((), [|0; ([||]: string array)|])
+        |> printfn "%A"
 
-        REPL.generateAST "[+ 1.5 2.0]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
-        
-        REPL.generateAST "[lambda [x] [+ 1 1]]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
+        *)
 
-        REPL.generateAST "[[lambda [x] [+ x 1]] 1]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
-
-        REPL.generateAST "[println [int->string [[lambda [x] [+ x 1]] 1]]]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
-
-        REPL.generateAST "[if [= 10 11]
-                         [println \"They are equal!\"]
-                      [println \"They are not equal!\"]]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
-
-        REPL.generateAST "[if [= 10 10]
-                         [println \"They are equal!\"]]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
-
-        REPL.generateAST "[defun hello [x]
-                         [println [int->string x]]]
-                     [hello 1]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
-        
-        REPL.generateAST "[defun hello [x y]
-                            [progn
-                              [println [int->string y]]
-                              [println x]]]
-                          [hello \"Hello\" 1]"
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
-
-        REPL.generateAST "\"Hello World! 🍬\""
-        |> List.map Language.Generator.expand
-        |> Language.Generator.wrapper
-        |> ignore
-
-        //REPL.repl()
+        REPL.repl()
 
         0
