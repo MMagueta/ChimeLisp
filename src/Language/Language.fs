@@ -154,13 +154,54 @@ module Generator = begin
 
         | [Expression.ENative (operator, arguments)] ->
             let state = (None, generator, target, env)
-            let None, generator, target, _ =
-                List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
-                    makeBlock generator target env argumentTypes [arg]) state arguments
             match operator with
-            | "+" -> generator.Emit(OpCodes.Add); None, generator, target, env
-            | "=" -> generator.Emit(OpCodes.Ceq); None, generator, target, env
-        
+            | "+" ->
+                generator.Emit(OpCodes.Ldc_I4_0)
+                let None, generator, target, _ =
+                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
+                               let None, generator, target, env =
+                                   makeBlock generator target env argumentTypes [arg]
+                               generator.Emit(OpCodes.Add)
+                               None, generator, target, env) state arguments
+                None, generator, target, env
+            | "-" ->
+                generator.Emit(OpCodes.Ldc_I4_0)
+                let None, generator, target, _ =
+                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
+                               let None, generator, target, env =
+                                   makeBlock generator target env argumentTypes [arg]
+                               generator.Emit(OpCodes.Sub)
+                               None, generator, target, env) state arguments
+                None, generator, target, env
+            | "*" ->
+                generator.Emit(OpCodes.Ldc_I4_1)
+                let None, generator, target, _ =
+                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
+                               let None, generator, target, env =
+                                   makeBlock generator target env argumentTypes [arg]
+                               generator.Emit(OpCodes.Mul)
+                               None, generator, target, env) state arguments
+                None, generator, target, env
+            | "/" ->
+                generator.Emit(OpCodes.Ldc_I4_1)
+                let None, generator, target, _ =
+                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
+                               let None, generator, target, env =
+                                   makeBlock generator target env argumentTypes [arg]
+                               generator.Emit(OpCodes.Div)
+                               None, generator, target, env) state arguments
+                None, generator, target, env
+            | "=" ->
+                let None, generator, target, _ =
+                    makeBlock generator target env argumentTypes [List.head arguments]
+                let None, generator, target, _ =
+                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
+                               let None, generator, target, env =
+                                   makeBlock generator target env argumentTypes [arg]
+                               generator.Emit(OpCodes.Ceq)
+                               None, generator, target, env) state arguments
+                None, generator, target, env
+
         | [Expression.EAbstraction (argumentNames, body)] ->
             let arguments =
                 match argumentTypes with
@@ -250,13 +291,13 @@ module Generator = begin
         generator.Emit(OpCodes.Ret)
         target, finalEnv
 
-    let wrapper exprs =
+    let wrapper exprs: int * Map<_,_> =
         let assembly = AssemblyBuilder.DefineDynamicAssembly(AssemblyName("ChimeLisp"), AssemblyBuilderAccess.Run)
         let moduleBuilder = assembly.DefineDynamicModule("ChimeLisp")
         let typeBuilder = moduleBuilder.DefineType("ChimeLisp", TypeAttributes.Sealed ||| TypeAttributes.Public)
         let entry = typeBuilder.DefineMethod("Main", MethodAttributes.Static ||| MethodAttributes.Public, typeof<int>, [|typeof<int>; typeof<string array>|])
         let target, finalEnv = compile (entry.GetILGenerator()) typeBuilder exprs
-        target.CreateType().GetMethod("Main").Invoke((), [|0; ([||]: string array)|]), finalEnv
+        target.CreateType().GetMethod("Main").Invoke((), [|0; ([||]: string array)|]) :?> int, finalEnv
         
 end
 
