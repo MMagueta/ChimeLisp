@@ -38,14 +38,14 @@ let ``Lambdas`` () =
 
 [<Fact>]
 let ``Conditionals`` () =
-    Language.Parser.generateAST "[if [= 10 11]
+    Language.Parser.generateAST "[if [= 10 10 11]
                      [println \"They are equal!\"]
                   [println \"They are not equal!\"]]"
     |> List.map Language.Generator.expand
     |> Language.Generator.wrapper
     |> (fst >> Assert.Equal 0)
 
-    Language.Parser.generateAST "[if [= 10 10]
+    Language.Parser.generateAST "[if [= 10 10 10]
                      [println \"They are equal!\"]]"
     |> List.map Language.Generator.expand
     |> Language.Generator.wrapper
