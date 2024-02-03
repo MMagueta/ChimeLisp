@@ -1,8 +1,7 @@
 #+TITLE: Chime Lisp 🔔
 
-#+ATTR_HTML: width="100px"
-#+ATTR_ORG: :width 100
-[[./docs/assets/ChimeLispColor.jpg]]
+#+ATTR_MARKDOWN: :width 200px
+[[./docs/assets/ChimeLogoAlphaColor.png]]
 
 * About
 
