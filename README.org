@@ -1,6 +1,6 @@
 #+TITLE: Chime Lisp 🔔
 
-<p align="center"><img width="156px" height="187px" src="docs/assets/LispColorRed.png" /></p>
+#+html: <p align="center"><img width="156px" height="187px" src="docs/assets/LispColorRed.png" /></p>
 
 #+BEGIN_QUOTE
 The way the mind functions provides a further proof.  A being can be
