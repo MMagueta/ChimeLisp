@@ -1,5 +1,9 @@
 #+TITLE: Chime Lisp 🔔
 
+#+ATTR_HTML: width="100px"
+#+ATTR_ORG: :width 100
+[[./docs/assets/ChimeLispColor.jpg]]
+
 * About
 
 My friends started a book club over Build Your Own Lisp, so I started my very dialect.
