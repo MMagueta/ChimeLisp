@@ -1,7 +1,11 @@
 #+TITLE: Chime Lisp 🔔
 
-#+ATTR_MARKDOWN: :width 200px
-[[./docs/assets/ChimeLogoAlphaColor.png]]
+# 520
+# 624
+
+#+ATTR_HTML: :width 156px
+#+ATTR_HTML: :height 187px
+[[./docs/assets/LispColorRed.png]]
 
 * About
 
