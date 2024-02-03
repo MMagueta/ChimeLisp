@@ -1,11 +1,14 @@
 #+TITLE: Chime Lisp 🔔
 
-# 520
-# 624
+<p align="center"><img width="156px" height="187px" src="docs/assets/LispColorRed.png" /></p>
 
-#+ATTR_HTML: :width 156px
-#+ATTR_HTML: :height 187px
-[[./docs/assets/LispColorRed.png]]
+#+BEGIN_QUOTE
+The way the mind functions provides a further proof.  A being can be
+grasped by an act of simple understanding, and in such a case the
+thing which is true is known. But the truth value itself is known only
+by an act of judgment.  Simple understanding, however, precedes an act
+of judgment -- John Duns Scotus, Concerning Human Knowledge
+#+END_QUOTE
 
 * About
 
@@ -14,7 +17,7 @@ My friends started a book club over Build Your Own Lisp, so I started my very di
 * Features [4/8]
 
 - [-] Target VMs
-  - [X] Target the .NET IL
+  - [-] Target the .NET IL
   - [ ] Target the [[https://github.com/Dr-Nekoma/chime][Chime VM]]
 - [X] Functions
 - [X] Variables
