@@ -213,8 +213,13 @@ module Generator = begin
                                     | Expression.EFloat x -> x
                 List.exists (function Expression.EInteger x -> head >= (float32 x)
                                     | Expression.EFloat x -> head >= x) (List.tail arguments)
-                |> function true -> generator.Emit(OpCodes.Ldc_I4_0)
-                          | false -> generator.Emit(OpCodes.Ldc_I4_1)
+                |> function
+                    | true ->
+                          generator.Emit(OpCodes.Ldc_I4_0)
+                          generator.Emit(OpCodes.Box, typeof<bool>)
+                    | false ->
+                        generator.Emit(OpCodes.Ldc_I4_1)
+                        generator.Emit(OpCodes.Box, typeof<bool>)
                 None, generator, target, env
             | "<=" ->
                 // Interpreted
@@ -319,7 +324,7 @@ module Generator = begin
 
         | otherwise -> printfn "------------OTHERWISE------------\n%A" otherwise; printfn "------------OTHERWISE------------"; failwith "Not implemented"
 
-    let compile generator target exprs =
+    let compile generator target ``is interactive call?`` exprs =
         let prelude =
             Map.empty
             |> Map.add "println" (Expression.EClosure (typeof<System.Console>.GetMethod("WriteLine", [| typeof<string> |]), Some typeof<Void>))
@@ -327,23 +332,24 @@ module Generator = begin
             |> Map.add "int->string" (Expression.EClosure (typeof<System.Convert>.GetMethod("ToString", [| typeof<int> |]), Some typeof<string>))
             |> Map.add "float->string" (Expression.EClosure (typeof<System.Convert>.GetMethod("ToString", [| typeof<float32> |]), Some typeof<string>))
 
-        printfn "%A" exprs
+        // printfn "%A" exprs
         
         let _, generator, target, finalEnv = makeBlock generator target prelude None exprs
         // TODO: Right now final env is required because of definitions not being present in the prelude
         let lastType = codeReturnType finalEnv exprs
-        if (lastType.IsValueType || lastType = typeof<string>) && lastType <> typeof<Void>
-        then generator.Emit(OpCodes.Pop)
+        if (lastType.IsValueType || lastType = typeof<string> || lastType = typeof<string>) && lastType <> typeof<Void>
+        then if ``is interactive call?`` then generator.Emit(OpCodes.Call, typeof<System.Console>.GetMethod("WriteLine", [| lastType |]))
+        else generator.Emit(OpCodes.Pop)
         generator.Emit(OpCodes.Ldc_I4, 0)
         generator.Emit(OpCodes.Ret)
         target, finalEnv
 
-    let wrapper exprs: int * Map<_,_> =
+    let wrapper ``is interactive call?`` exprs: int * Map<_,_> =
         let assembly = AssemblyBuilder.DefineDynamicAssembly(AssemblyName("ChimeLisp"), AssemblyBuilderAccess.Run)
         let moduleBuilder = assembly.DefineDynamicModule("ChimeLisp")
         let typeBuilder = moduleBuilder.DefineType("ChimeLisp", TypeAttributes.Sealed ||| TypeAttributes.Public)
         let entry = typeBuilder.DefineMethod("Main", MethodAttributes.Static ||| MethodAttributes.Public, typeof<int>, [|typeof<int>; typeof<string array>|])
-        let target, finalEnv = compile (entry.GetILGenerator()) typeBuilder exprs
+        let target, finalEnv = compile (entry.GetILGenerator()) typeBuilder ``is interactive call?`` exprs
         target.CreateType().GetMethod("Main").Invoke((), [|0; ([||]: string array)|]) :?> int, finalEnv
         
 end
