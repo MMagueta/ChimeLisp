@@ -40,6 +40,11 @@ module Matchers = begin
         match expr with
         | Expression.EList (func::args) -> Some (func, args)
         | _ -> None
+
+    let (|Quoted|_|) (expr: Expression.t) =
+        match expr with
+        | Expression.EList (Expression.EAtom "quote"::list) -> Some (list)
+        | _ -> None
 end
 
 
@@ -97,6 +102,7 @@ module Generator = begin
             List.tryLast exprs
             |> Option.map (expressionCLRType env false)
             |> Option.defaultValue (typeof<Void>)
+        | Quoted _ -> typeof<obj>
         | otherwise -> failwithf "Not implemented: %A" otherwise
     
     let rec expand (expr: Expression.t) =
@@ -110,7 +116,6 @@ module Generator = begin
         | IfThen (condition, thenBranch) ->
             Expression.EIfThenElse (expand condition, expand thenBranch, None)
         | Native (label, args) -> Expression.ENative (label, List.map expand args)
-
         | Expression.EList (Expression.EAtom "defvar" :: Expression.EAtom varName::[value]) ->
             Expression.EVariable (varName, expand value)
         | Expression.EList (Expression.EAtom "progn" :: subsequents) ->
@@ -125,6 +130,7 @@ module Generator = begin
             let expandedFunc = expand func
             let expandedArgs = List.map expand args
             Expression.EApplication (expandedFunc, expandedArgs)
+        | Quoted _ as quoted -> quoted
         | Expression.EList elems ->
             (List.map expand >> Expression.EList) elems
         | otherwise -> otherwise
@@ -276,9 +282,23 @@ module Generator = begin
                 makeBlock (lambdaMethodBuilder.GetILGenerator()) target newEnv argumentTypes [body]
             closure.Emit(OpCodes.Ret)
             Some <| Expression.EClosure (lambdaMethodBuilder, Some bodyType), generator, target, env
+
+        | [Quoted _ as quoted] ->
+            Some quoted, generator, target, env
             
         | [Expression.EList (x::rest)] ->
-            makeBlock generator target env argumentTypes [Expression.EApplication (x, rest)]
+            let clone = generator
+            let head, generator, target, _ =
+                makeBlock generator target env argumentTypes [x]
+            match head with
+            | Some (Expression.EClosure _ as closure) ->
+                makeBlock generator target env argumentTypes [Expression.EApplication (closure, rest)]
+            | Some otherwise -> makeBlock generator target env argumentTypes [Expression.EList (otherwise::rest)]
+            | None ->
+                let listType = codeReturnType env [x]
+                generator.Emit(OpCodes.Newarr, listType)
+                Some (Expression.EList (x::rest)), generator, target, env
+                // makeBlock generator target env argumentTypes [Expression.EList (otherwise::rest)]
 
         | [Expression.EApplication (func, args)] ->
             // TODO: Merge the environments later
