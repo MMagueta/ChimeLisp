@@ -36,11 +36,15 @@ module REPL = begin
                 else
                     match read (text + line) with
                     | Ok ast ->
-                        let _, env =
-                            ast
-                            |> List.map Language.Generator.expand
-                            |> Language.Generator.wrapper true
-                        loop false "" env
+                        try
+                            let _, env =
+                                ast
+                                |> List.map Language.Generator.expand
+                                |> Language.Generator.wrapper true
+                            in loop false "" env
+                        with e ->
+                            printfn "ERROR => %A" e
+                            loop false "" env
                     | Error e -> printfn "[ERROR]: %A" e
         loop false "" Map.empty
 
