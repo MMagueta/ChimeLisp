@@ -126,11 +126,11 @@ module Generator = begin
                 List.map (function Expression.EAtom label -> label) arguments
                 |> fun labels -> (funcName, Expression.EAbstraction (labels, expand body))
                 |> Expression.EVariable
+        | Quoted _ as quoted -> quoted
         | Application (func, args) ->
             let expandedFunc = expand func
             let expandedArgs = List.map expand args
             Expression.EApplication (expandedFunc, expandedArgs)
-        | Quoted _ as quoted -> quoted
         | Expression.EList elems ->
             (List.map expand >> Expression.EList) elems
         | otherwise -> otherwise
@@ -222,10 +222,8 @@ module Generator = begin
                 |> function
                     | true ->
                           generator.Emit(OpCodes.Ldc_I4_0)
-                          generator.Emit(OpCodes.Box, typeof<bool>)
                     | false ->
                         generator.Emit(OpCodes.Ldc_I4_1)
-                        generator.Emit(OpCodes.Box, typeof<bool>)
                 None, generator, target, env
             | "<=" ->
                 // Interpreted
@@ -357,9 +355,13 @@ module Generator = begin
         let _, generator, target, finalEnv = makeBlock generator target prelude None exprs
         // TODO: Right now final env is required because of definitions not being present in the prelude
         let lastType = codeReturnType finalEnv exprs
-        if (lastType.IsValueType || lastType = typeof<string> || lastType = typeof<string>) && lastType <> typeof<Void>
-        then if ``is interactive call?`` then generator.Emit(OpCodes.Call, typeof<System.Console>.GetMethod("WriteLine", [| lastType |]))
-        else generator.Emit(OpCodes.Pop)
+        if (lastType.IsValueType || lastType = typeof<string>) && lastType <> typeof<Void>
+        then
+            if ``is interactive call?`` then
+                generator.Emit(OpCodes.Call, typeof<System.Console>.GetMethod("WriteLine", [| lastType |]))
+            else generator.Emit(OpCodes.Pop)
+        // for now lists are not compiled with Newarr
+        else if lastType = typeof<List<_>> && ``is interactive call?`` then (List.tryLast exprs |> Option.map (printfn "%A")) |> ignore
         generator.Emit(OpCodes.Ldc_I4, 0)
         generator.Emit(OpCodes.Ret)
         target, finalEnv

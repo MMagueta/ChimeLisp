@@ -10,49 +10,49 @@ module Assert =
 let ``Primitives`` () =
     Language.Parser.generateAST "[+ 1.5 2.0]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
     Language.Parser.generateAST "\"Hello World! 🍬\""
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
     Language.Parser.generateAST "[println [int->string [< 1 2 3 4]]]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
     Language.Parser.generateAST "[println [int->string [<= 1 2 3 4]]]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
     Language.Parser.generateAST "[println [int->string [> 1 2 3 4]]]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
     Language.Parser.generateAST "[println [int->string [>= 1 1 1 1]]]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
 [<Fact>]
 let ``Lambdas`` () =
     Language.Parser.generateAST "[lambda [x] [+ 1 1]]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
     Language.Parser.generateAST "[[lambda [x] [+ x 1]] 1]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
     Language.Parser.generateAST "[println [int->string [[lambda [x] [+ x 1]] 1]]]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
 [<Fact>]
@@ -61,13 +61,13 @@ let ``Conditionals`` () =
                      [println \"They are equal!\"]
                   [println \"They are not equal!\"]]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
     Language.Parser.generateAST "[if [= 10 10 10]
                      [println \"They are equal!\"]]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
 [<Fact>]
@@ -76,7 +76,7 @@ let ``Definitions`` () =
                      [println [int->string x]]]
                  [hello 1]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
     
     Language.Parser.generateAST "[defun hello [x y]
@@ -85,12 +85,12 @@ let ``Definitions`` () =
                           [println x]]]
                       [hello \"Hello\" 1]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
     Language.Parser.generateAST "[defvar hello \"Hello!\"]
                       [println hello]"
     |> List.map Language.Generator.expand
-    |> Language.Generator.wrapper
+    |> Language.Generator.wrapper false
     |> (fst >> Assert.Equal 0)
 
