@@ -8,7 +8,7 @@ open Language
 %token <string> LITERAL_STRING
 %token <int> LITERAL_INTEGER
 %token <float32> LITERAL_FLOAT
-%token LEFT_LIM RIGHT_LIM EOF
+%token LEFT_LIM RIGHT_LIM QUOTE EOF
 %type <Expression.t list> parse
 
 %%
@@ -19,10 +19,11 @@ Expr: IDENTIFIER { Expression.EAtom $1 }
     | LITERAL_INTEGER { Expression.EInteger $1 }
     | LITERAL_FLOAT { Expression.EFloat $1 }
     | LEFT_LIM ExprList RIGHT_LIM { $2 |> List.rev |> Expression.EList }
-    // | APOSTROPHE Expr { Expression.List [ Expression.Atom "QUOTE"; $2 ] }
+    | QUOTE Expr { Expression.EList [Expression.EAtom "quote"; $2] }
 
 ExprList: Expr { [ $1 ] }
         | ExprList Expr { $2 :: $1  }
+        | { [] }
 
 parse: ExprList EOF { List.rev $1 }
     | EOF { [] }

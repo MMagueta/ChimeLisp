@@ -3,6 +3,7 @@ module Parser
 type token = 
   | LEFT_LIM
   | RIGHT_LIM
+  | QUOTE
   | EOF
   | LITERAL_FLOAT of (float32)
   | LITERAL_INTEGER of (int)
@@ -12,6 +13,7 @@ type token =
 type tokenId = 
     | TOKEN_LEFT_LIM
     | TOKEN_RIGHT_LIM
+    | TOKEN_QUOTE
     | TOKEN_EOF
     | TOKEN_LITERAL_FLOAT
     | TOKEN_LITERAL_INTEGER

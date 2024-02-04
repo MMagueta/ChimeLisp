@@ -21,7 +21,7 @@ let signed_integer = '-' ['0'-'9'] ['0'-'9']*
 let unsigned_integer = ['0'-'9'] ['0'-'9']*
 let integer = signed_integer | unsigned_integer
 let float = integer '.' unsigned_integer
-let symbol = ['!' '#' '$' '%' '&' '*' '+' '-' '.' '/' ':' '<' '=' '>' '?' '@' '^' '_' '`' '|' '~' ''']
+let symbol = ['!' '#' '$' '%' '&' '*' '+' '-' '.' '/' ':' '<' '=' '>' '?' '@' '^' '_' '`' '|' '~']
 let identifier = letter (letter | '_' | symbol)*
 let quote = '\''
 // let upper_ident = upper_letter (letter '_')*
@@ -32,8 +32,9 @@ rule tokenStream = parse
 // | type'         { Parser.TYPE' (LexBuffer<_>.LexemeString lexbuf) }
 | identifier+	{ Parser.IDENTIFIER (LexBuffer<_>.LexemeString lexbuf) }
 | symbol+	{ Parser.SYMBOL (LexBuffer<_>.LexemeString lexbuf) }
+| quote         { Parser.QUOTE }
 | integer       { Parser.LITERAL_INTEGER (int <| (LexBuffer<_>.LexemeString lexbuf)) }
-| float       { Parser.LITERAL_FLOAT (float32 <| (LexBuffer<_>.LexemeString lexbuf)) }
+| float         { Parser.LITERAL_FLOAT (float32 <| (LexBuffer<_>.LexemeString lexbuf)) }
 | '"'           { read_string "" false lexbuf } 
 // --------------------------
 | whitespace { tokenStream lexbuf }
