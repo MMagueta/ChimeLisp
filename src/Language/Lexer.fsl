@@ -31,7 +31,7 @@ rule tokenStream = parse
 // --------------------------
 // | type'         { Parser.TYPE' (LexBuffer<_>.LexemeString lexbuf) }
 | identifier+	{ Parser.IDENTIFIER (LexBuffer<_>.LexemeString lexbuf) }
-| symbol	{ Parser.SYMBOL (LexBuffer<_>.LexemeString lexbuf) }
+| symbol+	{ Parser.SYMBOL (LexBuffer<_>.LexemeString lexbuf) }
 | integer       { Parser.LITERAL_INTEGER (int <| (LexBuffer<_>.LexemeString lexbuf)) }
 | float       { Parser.LITERAL_FLOAT (float32 <| (LexBuffer<_>.LexemeString lexbuf)) }
 | '"'           { read_string "" false lexbuf } 

@@ -13,6 +13,10 @@ module Matchers = begin
         | Expression.EList ((Expression.EAtom "*")::args) -> Some ("*", args)
         | Expression.EList ((Expression.EAtom "/")::args) -> Some ("/", args)
         | Expression.EList ((Expression.EAtom "=")::args) -> Some ("=", args)
+        | Expression.EList ((Expression.EAtom "<")::args) -> Some ("<", args)
+        | Expression.EList ((Expression.EAtom "<=")::args) -> Some ("<=", args)
+        | Expression.EList ((Expression.EAtom ">")::args) -> Some (">", args)
+        | Expression.EList ((Expression.EAtom ">=")::args) -> Some (">=", args)
         | _ -> None
 
     let (|Lambda|_|) (exprs: Expression.t list) =
@@ -201,7 +205,50 @@ module Generator = begin
                                generator.Emit(OpCodes.Ceq)
                                None, generator, target, env) state arguments
                 None, generator, target, env
-
+            | "<" ->
+                // Interpreted
+                let head =
+                    List.head arguments
+                    |> function Expression.EInteger x -> float32 x
+                                    | Expression.EFloat x -> x
+                List.exists (function Expression.EInteger x -> head >= (float32 x)
+                                    | Expression.EFloat x -> head >= x) (List.tail arguments)
+                |> function true -> generator.Emit(OpCodes.Ldc_I4_0)
+                          | false -> generator.Emit(OpCodes.Ldc_I4_1)
+                None, generator, target, env
+            | "<=" ->
+                // Interpreted
+                let head =
+                    List.head arguments
+                    |> function Expression.EInteger x -> float32 x
+                                    | Expression.EFloat x -> x
+                List.exists (function Expression.EInteger x -> head > (float32 x)
+                                    | Expression.EFloat x -> head > x) (List.tail arguments)
+                |> function true -> generator.Emit(OpCodes.Ldc_I4_0)
+                          | false -> generator.Emit(OpCodes.Ldc_I4_1)
+                None, generator, target, env
+            | ">" ->
+                // Interpreted
+                let head =
+                    List.head arguments
+                    |> function Expression.EInteger x -> float32 x
+                                    | Expression.EFloat x -> x
+                List.exists (function Expression.EInteger x -> head <= (float32 x)
+                                    | Expression.EFloat x -> head <= x) (List.tail arguments)
+                |> function true -> generator.Emit(OpCodes.Ldc_I4_0)
+                          | false -> generator.Emit(OpCodes.Ldc_I4_1)
+                None, generator, target, env
+            | ">=" ->
+                // Interpreted
+                let head =
+                    List.head arguments
+                    |> function Expression.EInteger x -> float32 x
+                                    | Expression.EFloat x -> x
+                List.exists (function Expression.EInteger x -> head < (float32 x)
+                                    | Expression.EFloat x -> head < x) (List.tail arguments)
+                |> function true -> generator.Emit(OpCodes.Ldc_I4_0)
+                          | false -> generator.Emit(OpCodes.Ldc_I4_1)
+                None, generator, target, env
         | [Expression.EAbstraction (argumentNames, body)] ->
             let arguments =
                 match argumentTypes with
