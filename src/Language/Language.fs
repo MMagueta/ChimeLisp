@@ -14,6 +14,9 @@ module Matchers = begin
         | Expression.EList ((Expression.EAtom "/")::args) -> Some ("/", args)
         | Expression.EList ((Expression.EAtom "=")::args) -> Some ("=", args)
         | Expression.EList ((Expression.EAtom "<")::args) -> Some ("<", args)
+        | Expression.EList ((Expression.EAtom "<=")::args) -> Some ("<=", args)
+        | Expression.EList ((Expression.EAtom ">")::args) -> Some (">", args)
+        | Expression.EList ((Expression.EAtom ">=")::args) -> Some (">=", args)
         | _ -> None
 
     let (|Lambda|_|) (exprs: Expression.t list) =

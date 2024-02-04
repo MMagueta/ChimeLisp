@@ -23,6 +23,21 @@ let ``Primitives`` () =
     |> Language.Generator.wrapper
     |> (fst >> Assert.Equal 0)
 
+    Language.Parser.generateAST "[println [int->string [<= 1 2 3 4]]]"
+    |> List.map Language.Generator.expand
+    |> Language.Generator.wrapper
+    |> (fst >> Assert.Equal 0)
+
+    Language.Parser.generateAST "[println [int->string [> 1 2 3 4]]]"
+    |> List.map Language.Generator.expand
+    |> Language.Generator.wrapper
+    |> (fst >> Assert.Equal 0)
+
+    Language.Parser.generateAST "[println [int->string [>= 1 1 1 1]]]"
+    |> List.map Language.Generator.expand
+    |> Language.Generator.wrapper
+    |> (fst >> Assert.Equal 0)
+
 [<Fact>]
 let ``Lambdas`` () =
     Language.Parser.generateAST "[lambda [x] [+ 1 1]]"
