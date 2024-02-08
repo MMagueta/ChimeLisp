@@ -164,52 +164,11 @@ module Generator = begin
         | [Expression.ENative (operator, arguments)] ->
             let state = (None, generator, target, env)
             match operator with
-            | "+" ->
-                generator.Emit(OpCodes.Ldc_I4_0)
-                let None, generator, target, _ =
-                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
-                               let None, generator, target, env =
-                                   makeBlock generator target env argumentTypes [arg]
-                               generator.Emit(OpCodes.Add)
-                               None, generator, target, env) state arguments
-                None, generator, target, env
-            | "-" ->
-                generator.Emit(OpCodes.Ldc_I4_0)
-                let None, generator, target, _ =
-                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
-                               let None, generator, target, env =
-                                   makeBlock generator target env argumentTypes [arg]
-                               generator.Emit(OpCodes.Sub)
-                               None, generator, target, env) state arguments
-                None, generator, target, env
-            | "*" ->
-                generator.Emit(OpCodes.Ldc_I4_1)
-                let None, generator, target, _ =
-                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
-                               let None, generator, target, env =
-                                   makeBlock generator target env argumentTypes [arg]
-                               generator.Emit(OpCodes.Mul)
-                               None, generator, target, env) state arguments
-                None, generator, target, env
-            | "/" ->
-                generator.Emit(OpCodes.Ldc_I4_1)
-                let None, generator, target, _ =
-                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
-                               let None, generator, target, env =
-                                   makeBlock generator target env argumentTypes [arg]
-                               generator.Emit(OpCodes.Div)
-                               None, generator, target, env) state arguments
-                None, generator, target, env
-            | "=" ->
-                let None, generator, target, _ =
-                    makeBlock generator target env argumentTypes [List.head arguments]
-                let None, generator, target, _ =
-                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
-                               let None, generator, target, env =
-                                   makeBlock generator target env argumentTypes [arg]
-                               generator.Emit(OpCodes.Ceq)
-                               None, generator, target, env) state arguments
-                None, generator, target, env
+            | "+" -> emitArithmetic generator target env arguments OpCodes.Add
+            | "-" -> emitArithmetic generator target env arguments OpCodes.Sub
+            | "*" -> emitArithmetic generator target env arguments OpCodes.Mul
+            | "/" -> emitArithmetic generator target env arguments OpCodes.Div
+            | "=" -> emitArithmetic generator target env arguments OpCodes.Ceq
             | "<" ->
                 // Interpreted
                 let head =
@@ -344,6 +303,16 @@ module Generator = begin
             makeBlock (lambdaMethodBuilder.GetILGenerator()) target newEnv argumentTypes [body]
         closure.Emit(OpCodes.Ret)
         lambdaMethodBuilder
+
+    and emitArithmetic generator target env arguments operator =
+        let None, generator, target, _ = makeBlock generator target env None [arguments.Head]
+        let None, generator, target, _ =
+            List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
+                       let None, generator, target, env =
+                           makeBlock generator target env None [arg]
+                       generator.Emit(operator)
+                       None, generator, target, env) (None, generator, target, env) arguments
+        None, generator, target, env
 
     let compile generator target ``is interactive call?`` exprs =
         let prelude =
