@@ -70,8 +70,9 @@ module Generator = begin
             | _ -> failwith("An if statement expects the 'then' and 'else' branches to be of the same type.")
         | Expression.EIfThenElse (_, thenValue, None) ->
             expressionCLRType env false thenValue
-        | Expression.EApplication (Expression.EClosure (func, None), _) -> func.ReturnType
-        | Expression.EApplication (Expression.EClosure (_, Some returnType), _) -> returnType
+        | Expression.EApplication (Expression.EClosure (func), _) ->
+            try func.ReturnType
+            with _ -> typeof<obj>
         | Expression.EApplication (x, _) -> expressionCLRType env true x
         | Expression.EAbstraction (args, body) when ``from application?`` ->
             // TODO: Lookup types of the arguments passing down recursively form the application
@@ -92,12 +93,10 @@ module Generator = begin
         | Expression.EFloat _ -> typeof<float32>
         | Expression.EString _ -> typeof<string>
         | Expression.EVariable _ -> typeof<obj>
-        | Expression.EClosure (methodBuilder, None) ->
+        | Expression.EClosure methodBuilder ->
             try 
                 methodBuilder.ReturnType
             with _ -> typeof<obj>
-        | Expression.EClosure (_, Some returnType) ->
-            returnType
         | Expression.EProgn exprs ->
             List.tryLast exprs
             |> Option.map (expressionCLRType env false)
@@ -165,52 +164,11 @@ module Generator = begin
         | [Expression.ENative (operator, arguments)] ->
             let state = (None, generator, target, env)
             match operator with
-            | "+" ->
-                generator.Emit(OpCodes.Ldc_I4_0)
-                let None, generator, target, _ =
-                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
-                               let None, generator, target, env =
-                                   makeBlock generator target env argumentTypes [arg]
-                               generator.Emit(OpCodes.Add)
-                               None, generator, target, env) state arguments
-                None, generator, target, env
-            | "-" ->
-                generator.Emit(OpCodes.Ldc_I4_0)
-                let None, generator, target, _ =
-                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
-                               let None, generator, target, env =
-                                   makeBlock generator target env argumentTypes [arg]
-                               generator.Emit(OpCodes.Sub)
-                               None, generator, target, env) state arguments
-                None, generator, target, env
-            | "*" ->
-                generator.Emit(OpCodes.Ldc_I4_1)
-                let None, generator, target, _ =
-                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
-                               let None, generator, target, env =
-                                   makeBlock generator target env argumentTypes [arg]
-                               generator.Emit(OpCodes.Mul)
-                               None, generator, target, env) state arguments
-                None, generator, target, env
-            | "/" ->
-                generator.Emit(OpCodes.Ldc_I4_1)
-                let None, generator, target, _ =
-                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
-                               let None, generator, target, env =
-                                   makeBlock generator target env argumentTypes [arg]
-                               generator.Emit(OpCodes.Div)
-                               None, generator, target, env) state arguments
-                None, generator, target, env
-            | "=" ->
-                let None, generator, target, _ =
-                    makeBlock generator target env argumentTypes [List.head arguments]
-                let None, generator, target, _ =
-                    List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
-                               let None, generator, target, env =
-                                   makeBlock generator target env argumentTypes [arg]
-                               generator.Emit(OpCodes.Ceq)
-                               None, generator, target, env) state arguments
-                None, generator, target, env
+            | "+" -> emitArithmetic generator target env arguments OpCodes.Add
+            | "-" -> emitArithmetic generator target env arguments OpCodes.Sub
+            | "*" -> emitArithmetic generator target env arguments OpCodes.Mul
+            | "/" -> emitArithmetic generator target env arguments OpCodes.Div
+            | "=" -> emitArithmetic generator target env arguments OpCodes.Ceq
             | "<" ->
                 // Interpreted
                 let head =
@@ -259,27 +217,8 @@ module Generator = begin
                           | false -> generator.Emit(OpCodes.Ldc_I4_1)
                 None, generator, target, env
         | [Expression.EAbstraction (argumentNames, body)] ->
-            let arguments =
-                match argumentTypes with
-                | Some types ->
-                    // We don't need to loop over the list of argument names if they are the same
-                    List.mapi (fun i type' -> Expression.EArgument (i, type')) types
-                | None -> List.mapi (fun i _label -> Expression.EArgument (i, typeof<obj>)) argumentNames
-            let newEnv =
-                List.fold
-                    (fun acc (label, argument) -> Map.add label argument acc)
-                    env
-                    (List.zip argumentNames arguments)
-            let bodyType = codeReturnType newEnv [body]
-            let lambdaMethodBuilder = 
-                target.DefineMethod("Lambda",
-                                    MethodAttributes.Static ||| MethodAttributes.Public,
-                                    bodyType,
-                                    [| for i in 0..arguments.Length - 1 do codeReturnType env [arguments.Item i] |])
-            let None, closure, target, env = 
-                makeBlock (lambdaMethodBuilder.GetILGenerator()) target newEnv argumentTypes [body]
-            closure.Emit(OpCodes.Ret)
-            Some <| Expression.EClosure (lambdaMethodBuilder, Some bodyType), generator, target, env
+            let lambdaMethod = emitAbstraction argumentTypes env argumentNames body target
+            Some (Expression.EClosure lambdaMethod), generator, target, env
 
         | [Quoted _ as quoted] ->
             Some quoted, generator, target, env
@@ -300,7 +239,7 @@ module Generator = begin
 
         | [Expression.EApplication (func, args)] ->
             // TODO: Merge the environments later
-            let Some (Expression.EClosure (methodBuilder, _)), _, target, newEnv =
+            let Some (Expression.EClosure methodBuilder), _, target, newEnv =
                 makeBlock generator target env (Some (List.map (fun x -> codeReturnType env [x]) args)) [func]
             let None, generator, target, _ =
                 List.fold (fun (None, generator, target, _)
@@ -342,13 +281,46 @@ module Generator = begin
 
         | otherwise -> printfn "------------OTHERWISE------------\n%A" otherwise; printfn "------------OTHERWISE------------"; failwith "Not implemented"
 
+    and emitAbstraction argumentTypes env argumentNames body (target: TypeBuilder) =
+        let arguments =
+            match argumentTypes with
+            | Some types ->
+                // We don't need to loop over the list of argument names if they are the same
+                List.mapi (fun i type' -> Expression.EArgument (i, type')) types
+            | None -> List.mapi (fun i _label -> Expression.EArgument (i, typeof<obj>)) argumentNames
+        let newEnv =
+            List.fold
+                (fun acc (label, argument) -> Map.add label argument acc)
+                env
+                (List.zip argumentNames arguments)
+        let bodyType = codeReturnType newEnv [body]
+        let lambdaMethodBuilder = 
+            target.DefineMethod("Lambda",
+                                MethodAttributes.Static ||| MethodAttributes.Public,
+                                bodyType,
+                                [| for i in 0..arguments.Length - 1 do codeReturnType env [arguments.Item i] |])
+        let None, closure, target, env = 
+            makeBlock (lambdaMethodBuilder.GetILGenerator()) target newEnv argumentTypes [body]
+        closure.Emit(OpCodes.Ret)
+        lambdaMethodBuilder
+
+    and emitArithmetic generator target env arguments operator =
+        let None, generator, target, _ = makeBlock generator target env None [arguments.Head]
+        let None, generator, target, _ =
+            List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
+                       let None, generator, target, env =
+                           makeBlock generator target env None [arg]
+                       generator.Emit(operator)
+                       None, generator, target, env) (None, generator, target, env) arguments
+        None, generator, target, env
+
     let compile generator target ``is interactive call?`` exprs =
         let prelude =
             Map.empty
-            |> Map.add "println" (Expression.EClosure (typeof<System.Console>.GetMethod("WriteLine", [| typeof<string> |]), Some typeof<Void>))
-            |> Map.add "print" (Expression.EClosure (typeof<System.Console>.GetMethod("Write", [| typeof<string> |]), Some typeof<Void>))
-            |> Map.add "int->string" (Expression.EClosure (typeof<System.Convert>.GetMethod("ToString", [| typeof<int> |]), Some typeof<string>))
-            |> Map.add "float->string" (Expression.EClosure (typeof<System.Convert>.GetMethod("ToString", [| typeof<float32> |]), Some typeof<string>))
+            |> Map.add "println" (Expression.EClosure (typeof<System.Console>.GetMethod("WriteLine", [| typeof<string> |])))
+            |> Map.add "print" (Expression.EClosure (typeof<System.Console>.GetMethod("Write", [| typeof<string> |])))
+            |> Map.add "int->string" (Expression.EClosure (typeof<System.Convert>.GetMethod("ToString", [| typeof<int> |])))
+            |> Map.add "float->string" (Expression.EClosure (typeof<System.Convert>.GetMethod("ToString", [| typeof<float32> |])))
 
         // printfn "%A" exprs
         
@@ -389,7 +361,7 @@ module Expression = begin
     | EVariable of string * t
     | EApplication of Closure: t * Arguments: t list
     | EAbstraction of string list * t
-    | EClosure of MethodInfo * ReturnType: Type option
+    | EClosure of MethodInfo
     | ENative of string * t list
     | EIfThenElse of t * t * t option
     // | EVariableReference of LocalBuilder
