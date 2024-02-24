@@ -154,3 +154,65 @@
 	(format t "Compiled successfully!")
 	(format t "Failed compiling!"))))
 
+(defmacro comment (&rest a)
+  nil)
+
+#|
+ (module
+  (func (export "AddInt")
+	(param $value_1 i32) (param $value_2 i32)
+	(result i32)
+	local.get $value_1
+	local.get $value_2
+	i32.add
+	)
+  )
+|#
+
+(defconstant +left-bracket+ #\[)
+(defconstant +right-bracket+ #\])
+(defconstant +colon+ #\:)
+
+(defun read-next-object (delimiter &optional (input-stream *standard-input*))
+  (flet ((peek-next-char () (peek-char t input-stream t nil t))
+         (discard-next-char () (read-char input-stream t nil t)))
+    (if (and delimiter (char= (peek-next-char) delimiter))
+        (progn
+          (discard-next-char)
+          nil)
+	(read input-stream t nil t))))
+
+(defun read-left-bracket (stream char)
+  (declare (ignore char))
+  (let ((*readtable* (copy-readtable)))
+    (setf (readtable-case *readtable*) :preserve)
+    ;; (set-macro-character +comma+ 'read-separator)
+    (loop
+       :for object := (read-next-object +right-bracket+ stream)
+       :while object
+       :collect object :into objects
+       :finally
+	  (return (cond
+		    ((and objects (eq (car objects)
+				      '|defun|)) (cons 'chimelisp/defun (cdr objects)))
+		    (t `',objects))))))
+
+(set-macro-character +left-bracket+ 'read-left-bracket)
+(set-macro-character +right-bracket+ 'read-delimiter)
+
+(defmacro chimelisp/defun (name args body)
+  (format t "Hello!")
+  ''haha)
+
+#|
+[module
+[func [export "AddInt"]
+[param $value_1 i32] [param $value_2 i32]
+[result i32]
+local.get $value_1
+local.get $value_2
+i32.add]]
+|#
+
+(let ((ast [module [defun inc [x] [+ 1 x]]]))
+  (write ast))
