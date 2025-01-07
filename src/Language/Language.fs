@@ -1,356 +1,17 @@
-namespace rec Language
+namespace Language
 
+open System.IO
 open System
-open System.Reflection
-open System.Reflection.Emit
-open System.Collections.Generic
-
-module Matchers = begin
-    let (|Native|_|) (exprs: Expression.t) =
-        match exprs with
-        | Expression.EList ((Expression.EAtom "+")::args) -> Some ("+", args)
-        | Expression.EList ((Expression.EAtom "-")::args) -> Some ("-", args)
-        | Expression.EList ((Expression.EAtom "*")::args) -> Some ("*", args)
-        | Expression.EList ((Expression.EAtom "/")::args) -> Some ("/", args)
-        | Expression.EList ((Expression.EAtom "=")::args) -> Some ("=", args)
-        | Expression.EList ((Expression.EAtom "<")::args) -> Some ("<", args)
-        | Expression.EList ((Expression.EAtom "<=")::args) -> Some ("<=", args)
-        | Expression.EList ((Expression.EAtom ">")::args) -> Some (">", args)
-        | Expression.EList ((Expression.EAtom ">=")::args) -> Some (">=", args)
-        | _ -> None
-
-    let (|Lambda|_|) (exprs: Expression.t list) =
-        match exprs with
-        | (Expression.EList ((Expression.EAtom "lambda")::(Expression.EList args)::body::[]))::rest -> Some (args, body, rest)
-        | _ -> None
-        
-    let (|IfThenElse|_|) (exprs: Expression.t) =
-        match exprs with
-        | Expression.EList((Expression.EAtom "if")::condition::thenBranch::[elseBranch]) ->
-            Some (condition, thenBranch, elseBranch)
-        | _ -> None
-        
-    let (|IfThen|_|) (exprs: Expression.t) =
-        match exprs with
-        | Expression.EList((Expression.EAtom "if")::condition::thenBranch::[]) ->
-            Some (condition, thenBranch)
-        | _ -> None
-
-    let (|Application|_|) (expr: Expression.t) =
-        match expr with
-        | Expression.EList (func::args) -> Some (func, args)
-        | _ -> None
-
-    let (|Quoted|_|) (expr: Expression.t) =
-        match expr with
-        | Expression.EList (Expression.EAtom "quote"::list) -> Some (list)
-        | _ -> None
-end
-
-
-[<RequireQualifiedAccess>]
-module Generator = begin
-    open Matchers
-
-    let codeReturnType (env: Map<_,_>) (exprs: Expression.t list) = 
-        List.tryLast exprs
-        |> Option.map (expressionCLRType env false)
-        |> Option.defaultValue typeof<Void>
-    
-    let rec expressionCLRType (env : Map<string, Expression.t>) ``from application?`` expr =
-        match expr with
-        | Expression.EArgument (_, t) -> t
-        | Expression.EAtom label ->
-            match Map.tryFind label env with
-            | Some value -> expressionCLRType env ``from application?`` value
-            | None -> failwithf "Could not find '%s' in the environment." label
-        | Expression.EIfThenElse (_, thenValue, Some elseValue) ->
-            match expressionCLRType env false thenValue with
-            | t when t = expressionCLRType env false elseValue -> t
-            | _ -> failwith("An if statement expects the 'then' and 'else' branches to be of the same type.")
-        | Expression.EIfThenElse (_, thenValue, None) ->
-            expressionCLRType env false thenValue
-        | Expression.EApplication (Expression.EClosure (func), _) ->
-            try func.ReturnType
-            with _ -> typeof<obj>
-        | Expression.EApplication (x, _) -> expressionCLRType env true x
-        | Expression.EAbstraction (args, body) when ``from application?`` ->
-            // TODO: Lookup types of the arguments passing down recursively form the application
-            // Remove the typeof<obj>
-            let (_, newEnv) = List.fold (fun (index, acc) arg -> index + 1, Map.add arg (Expression.EArgument (index, typeof<obj>)) acc) (0, env) args
-            expressionCLRType newEnv false body
-        | Expression.EAbstraction _ ->
-            typeof<Func<_,_>>
-        | Expression.ENative(_, arguments) ->
-            // Gambiarra, needs to check if all are the same because of EArguments
-            List.map (expressionCLRType env true) arguments
-            |> List.tryPick (fun t -> if t <> typeof<Void> && t <> typeof<obj> then Some t else None)
-            |> function Some t -> t
-                      | None -> typeof<Void>
-        //| Expression.EList (Expression.EAtom label :: args) -> invokeFromEnvironment label args env |> typeOf env
-        | Expression.EList _ -> typeof<List<_>>
-        | Expression.EInteger _ -> typeof<int>
-        | Expression.EFloat _ -> typeof<float32>
-        | Expression.EString _ -> typeof<string>
-        | Expression.EVariable _ -> typeof<obj>
-        | Expression.EClosure methodBuilder ->
-            try 
-                methodBuilder.ReturnType
-            with _ -> typeof<obj>
-        | Expression.EProgn exprs ->
-            List.tryLast exprs
-            |> Option.map (expressionCLRType env false)
-            |> Option.defaultValue (typeof<Void>)
-        | Quoted _ -> typeof<obj>
-        | otherwise -> failwithf "Not implemented: %A" otherwise
-    
-    let rec expand (expr: Expression.t) =
-        match expr with
-        | Expression.EList (Expression.EAtom "lambda" :: rest) ->
-            match rest with
-            | [ Expression.EList arguments; body ] ->
-                Expression.EAbstraction (List.map (function Expression.EAtom label -> label) arguments, expand body)
-        | IfThenElse (condition, thenBranch, elseBranch) ->
-            Expression.EIfThenElse (expand condition, expand thenBranch, (Some << expand) elseBranch)
-        | IfThen (condition, thenBranch) ->
-            Expression.EIfThenElse (expand condition, expand thenBranch, None)
-        | Native (label, args) -> Expression.ENative (label, List.map expand args)
-        | Expression.EList (Expression.EAtom "defvar" :: Expression.EAtom varName::[value]) ->
-            Expression.EVariable (varName, expand value)
-        | Expression.EList (Expression.EAtom "progn" :: subsequents) ->
-            Expression.EProgn (List.map expand subsequents)
-        | Expression.EList (Expression.EAtom "defun" ::Expression.EAtom funcName::rest) ->
-            match rest with
-            | [Expression.EList arguments; body ] ->
-                List.map (function Expression.EAtom label -> label) arguments
-                |> fun labels -> (funcName, Expression.EAbstraction (labels, expand body))
-                |> Expression.EVariable
-        | Quoted _ as quoted -> quoted
-        | Application (func, args) ->
-            let expandedFunc = expand func
-            let expandedArgs = List.map expand args
-            Expression.EApplication (expandedFunc, expandedArgs)
-        | Expression.EList elems ->
-            (List.map expand >> Expression.EList) elems
-        | otherwise -> otherwise
-
-
-    let rec makeBlock (generator: ILGenerator) (target: TypeBuilder) env (argumentTypes: Type list option) expr: Expression.t option * ILGenerator * TypeBuilder * Map<_,_> =
-        match expr with
-        | (Expression.EVariable (label, value))::rest ->
-            makeBlock generator target (Map.add label value env) argumentTypes rest
-            
-        | [Expression.EAtom label] ->
-            match Map.tryFind label env with
-            | Some value -> makeBlock generator target env argumentTypes [value]
-            | None -> failwithf "Could not find '%s' in the environment." label
-
-        | [Expression.EArgument (index, _)] -> 
-            generator.Emit(OpCodes.Ldarg, index)
-            None, generator, target, env
-
-        | [Expression.EInteger n] -> 
-            generator.Emit(OpCodes.Ldc_I4, n)
-            None, generator, target, env
-
-        | [Expression.EFloat n] -> 
-            generator.Emit(OpCodes.Ldc_R4, n)
-            None, generator, target, env
-
-        | [Expression.EString s] -> 
-            generator.Emit(OpCodes.Ldstr, s)
-            None, generator, target, env
-
-        | [Expression.ENative (operator, arguments)] ->
-            let state = (None, generator, target, env)
-            match operator with
-            | "+" -> emitArithmetic generator target env arguments OpCodes.Add
-            | "-" -> emitArithmetic generator target env arguments OpCodes.Sub
-            | "*" -> emitArithmetic generator target env arguments OpCodes.Mul
-            | "/" -> emitArithmetic generator target env arguments OpCodes.Div
-            | "=" -> emitArithmetic generator target env arguments OpCodes.Ceq
-            | "<" ->
-                // Interpreted
-                let head =
-                    List.head arguments
-                    |> function Expression.EInteger x -> float32 x
-                                    | Expression.EFloat x -> x
-                List.exists (function Expression.EInteger x -> head >= (float32 x)
-                                    | Expression.EFloat x -> head >= x) (List.tail arguments)
-                |> function
-                    | true ->
-                          generator.Emit(OpCodes.Ldc_I4_0)
-                    | false ->
-                        generator.Emit(OpCodes.Ldc_I4_1)
-                None, generator, target, env
-            | "<=" ->
-                // Interpreted
-                let head =
-                    List.head arguments
-                    |> function Expression.EInteger x -> float32 x
-                                    | Expression.EFloat x -> x
-                List.exists (function Expression.EInteger x -> head > (float32 x)
-                                    | Expression.EFloat x -> head > x) (List.tail arguments)
-                |> function true -> generator.Emit(OpCodes.Ldc_I4_0)
-                          | false -> generator.Emit(OpCodes.Ldc_I4_1)
-                None, generator, target, env
-            | ">" ->
-                // Interpreted
-                let head =
-                    List.head arguments
-                    |> function Expression.EInteger x -> float32 x
-                                    | Expression.EFloat x -> x
-                List.exists (function Expression.EInteger x -> head <= (float32 x)
-                                    | Expression.EFloat x -> head <= x) (List.tail arguments)
-                |> function true -> generator.Emit(OpCodes.Ldc_I4_0)
-                          | false -> generator.Emit(OpCodes.Ldc_I4_1)
-                None, generator, target, env
-            | ">=" ->
-                // Interpreted
-                let head =
-                    List.head arguments
-                    |> function Expression.EInteger x -> float32 x
-                                    | Expression.EFloat x -> x
-                List.exists (function Expression.EInteger x -> head < (float32 x)
-                                    | Expression.EFloat x -> head < x) (List.tail arguments)
-                |> function true -> generator.Emit(OpCodes.Ldc_I4_0)
-                          | false -> generator.Emit(OpCodes.Ldc_I4_1)
-                None, generator, target, env
-        | [Expression.EAbstraction (argumentNames, body)] ->
-            let lambdaMethod = emitAbstraction argumentTypes env argumentNames body target
-            Some (Expression.EClosure lambdaMethod), generator, target, env
-
-        | [Quoted _ as quoted] ->
-            Some quoted, generator, target, env
-            
-        | [Expression.EList (x::rest)] ->
-            let clone = generator
-            let head, generator, target, _ =
-                makeBlock generator target env argumentTypes [x]
-            match head with
-            | Some (Expression.EClosure _ as closure) ->
-                makeBlock generator target env argumentTypes [Expression.EApplication (closure, rest)]
-            | Some otherwise -> makeBlock generator target env argumentTypes [Expression.EList (otherwise::rest)]
-            | None ->
-                let listType = codeReturnType env [x]
-                generator.Emit(OpCodes.Newarr, listType)
-                Some (Expression.EList (x::rest)), generator, target, env
-                // makeBlock generator target env argumentTypes [Expression.EList (otherwise::rest)]
-
-        | [Expression.EApplication (func, args)] ->
-            // TODO: Merge the environments later
-            let Some (Expression.EClosure methodBuilder), _, target, newEnv =
-                makeBlock generator target env (Some (List.map (fun x -> codeReturnType env [x]) args)) [func]
-            let None, generator, target, _ =
-                List.fold (fun (None, generator, target, _)
-                               argumentToCompile ->
-                        makeBlock generator target env argumentTypes [argumentToCompile])
-                        (None, generator, target, newEnv)
-                        args
-            generator.Emit(OpCodes.Call, methodBuilder)
-
-            None, generator, target, newEnv
-        | [Expression.EClosure _ as closure] ->
-            Some closure, generator, target, env
-
-        | [Expression.EIfThenElse (condition, thenBranch, Some elseBranch)] ->
-            let elseLabel = generator.DefineLabel()
-            let endLabel = generator.DefineLabel()
-            let None, generator, target, _ = makeBlock generator target env argumentTypes [condition]
-            generator.Emit(OpCodes.Brfalse, elseLabel)
-            let None, generator, target, _ = makeBlock generator target env argumentTypes [thenBranch]
-            generator.Emit(OpCodes.Br, endLabel)
-            generator.MarkLabel(elseLabel)
-            let None, generator, target, _ = makeBlock generator target env argumentTypes [elseBranch]
-            generator.MarkLabel(endLabel)
-            None, generator, target, env
-
-        | [Expression.EIfThenElse (condition, thenBranch, None)] ->
-            let endLabel = generator.DefineLabel()
-            let None, generator, target, _ = makeBlock generator target env argumentTypes [condition]
-            generator.Emit(OpCodes.Brfalse, endLabel)
-            let None, generator, target, _ = makeBlock generator target env argumentTypes [thenBranch]
-            generator.MarkLabel(endLabel)
-            None, generator, target, env
-            
-        | [Expression.EProgn exprs] ->
-            let None, generator, target, _ =
-                List.fold (fun (None, generator, target, _) expr ->
-                    makeBlock generator target env argumentTypes [expr]) (None, generator, target, env) exprs
-            None, generator, target, env
-
-        | otherwise -> printfn "------------OTHERWISE------------\n%A" otherwise; printfn "------------OTHERWISE------------"; failwith "Not implemented"
-
-    and emitAbstraction argumentTypes env argumentNames body (target: TypeBuilder) =
-        let arguments =
-            match argumentTypes with
-            | Some types ->
-                // We don't need to loop over the list of argument names if they are the same
-                List.mapi (fun i type' -> Expression.EArgument (i, type')) types
-            | None -> List.mapi (fun i _label -> Expression.EArgument (i, typeof<obj>)) argumentNames
-        let newEnv =
-            List.fold
-                (fun acc (label, argument) -> Map.add label argument acc)
-                env
-                (List.zip argumentNames arguments)
-        let bodyType = codeReturnType newEnv [body]
-        let lambdaMethodBuilder = 
-            target.DefineMethod("Lambda",
-                                MethodAttributes.Static ||| MethodAttributes.Public,
-                                bodyType,
-                                [| for i in 0..arguments.Length - 1 do codeReturnType env [arguments.Item i] |])
-        let None, closure, target, env = 
-            makeBlock (lambdaMethodBuilder.GetILGenerator()) target newEnv argumentTypes [body]
-        closure.Emit(OpCodes.Ret)
-        lambdaMethodBuilder
-
-    and emitArithmetic generator target env arguments operator =
-        let None, generator, target, _ = makeBlock generator target env None [arguments.Head]
-        let None, generator, target, _ =
-            List.fold (fun (None, generator, target, _) (arg: Expression.t) ->
-                       let None, generator, target, env =
-                           makeBlock generator target env None [arg]
-                       generator.Emit(operator)
-                       None, generator, target, env) (None, generator, target, env) arguments
-        None, generator, target, env
-
-    let compile generator target ``is interactive call?`` exprs =
-        let prelude =
-            Map.empty
-            |> Map.add "println" (Expression.EClosure (typeof<System.Console>.GetMethod("WriteLine", [| typeof<string> |])))
-            |> Map.add "print" (Expression.EClosure (typeof<System.Console>.GetMethod("Write", [| typeof<string> |])))
-            |> Map.add "int->string" (Expression.EClosure (typeof<System.Convert>.GetMethod("ToString", [| typeof<int> |])))
-            |> Map.add "float->string" (Expression.EClosure (typeof<System.Convert>.GetMethod("ToString", [| typeof<float32> |])))
-
-        // printfn "%A" exprs
-        
-        let _, generator, target, finalEnv = makeBlock generator target prelude None exprs
-        // TODO: Right now final env is required because of definitions not being present in the prelude
-        let lastType = codeReturnType finalEnv exprs
-        if (lastType.IsValueType || lastType = typeof<string>) && lastType <> typeof<Void>
-        then
-            if ``is interactive call?`` then
-                generator.Emit(OpCodes.Call, typeof<System.Console>.GetMethod("WriteLine", [| lastType |]))
-            else generator.Emit(OpCodes.Pop)
-        // for now lists are not compiled with Newarr
-        else if lastType = typeof<List<_>> && ``is interactive call?`` then (List.tryLast exprs |> Option.map (printfn "%A")) |> ignore
-        generator.Emit(OpCodes.Ldc_I4, 0)
-        generator.Emit(OpCodes.Ret)
-        target, finalEnv
-
-    let wrapper ``is interactive call?`` exprs: int * Map<_,_> =
-        let assembly = AssemblyBuilder.DefineDynamicAssembly(AssemblyName("ChimeLisp"), AssemblyBuilderAccess.Run)
-        let moduleBuilder = assembly.DefineDynamicModule("ChimeLisp")
-        let typeBuilder = moduleBuilder.DefineType("ChimeLisp", TypeAttributes.Sealed ||| TypeAttributes.Public)
-        let entry = typeBuilder.DefineMethod("Main", MethodAttributes.Static ||| MethodAttributes.Public, typeof<int>, [|typeof<int>; typeof<string array>|])
-        let target, finalEnv = compile (entry.GetILGenerator()) typeBuilder ``is interactive call?`` exprs
-        target.CreateType().GetMethod("Main").Invoke((), [|0; ([||]: string array)|]) :?> int, finalEnv
-        
-end
+open Mono.Cecil
+open Mono.Cecil.Rocks
+open Mono.Cecil.Cil
 
 [<RequireQualifiedAccess>]
 module Expression = begin
-    
+    type Storage = 
+    | Argument of string
+    | Local of string
+    | Global of string
     type t =
     | EAtom of string
     | EArgument of Index: int * Type
@@ -361,9 +22,408 @@ module Expression = begin
     | EVariable of string * t
     | EApplication of Closure: t * Arguments: t list
     | EAbstraction of string list * t
-    | EClosure of MethodInfo
     | ENative of string * t list
     | EIfThenElse of t * t * t option
-    // | EVariableReference of LocalBuilder
     | EProgn of t list
+    | EDefinition of Name: string * StorageType: Storage * Content: t option
+    | ELoad of Storage
+end
+
+module Generator = begin
+
+    // Type to Hold Context While Emitting IL
+    type EmitCtx =
+        { Assm: AssemblyDefinition;
+          IL: ILProcessor;
+          mutable NextLambda: int;
+          ScopePrefix: string;
+          ProgramTy: TypeDefinition }
+
+    /// Emit an instance of the unspecified value
+    let private emitUnspecified (il: ILProcessor) =
+        // TODO: What should we do about empty sequences? This falls back to '()
+        il.Emit(OpCodes.Ldnull)
+
+    /// Ensure a field exists on the program type to be used as a global variable
+    let private ensureField ctx id =
+        let pred (field: FieldDefinition) =
+            field.Name = id
+        match Seq.tryFind pred ctx.ProgramTy.Fields with
+        | Some(found) -> found
+        | None ->
+            let newField = FieldDefinition(id, FieldAttributes.Static, ctx.Assm.MainModule.TypeSystem.Object)
+            ctx.ProgramTy.Fields.Add(newField)
+            newField
+
+    /// Emit a Single Bound Expression
+    ///
+    /// Emits the code for a single function into the given assembly.
+    let rec private emitExpression (ctx: EmitCtx) (expr: Expression.t) =
+        let recurse = emitExpression ctx
+        match expr with
+        | Expression.EAtom "nil" -> ctx.IL.Emit(OpCodes.Ldnull)
+        | Expression.EInteger n ->
+            ctx.IL.Emit(OpCodes.Ldc_I4, n)
+            ctx.IL.Emit(OpCodes.Box, ctx.Assm.MainModule.TypeSystem.Int32)
+        | Expression.EString s -> ctx.IL.Emit(OpCodes.Ldstr, s)
+        //| Expression.EBoolean b ->
+        //    ctx.IL.Emit(if b then OpCodes.Ldc_I4_1 else OpCodes.Ldc_I4_0)
+        //    ctx.IL.Emit(OpCodes.Box, ctx.Assm.MainModule.TypeSystem.Boolean)
+        | Expression.EList [] -> emitUnspecified ctx.IL
+        | Expression.EList s -> emitSequence ctx s
+        | Expression.EApplication(ap, args) -> emitApplication ctx ap args
+        | Expression.EDefinition(id, storage, maybeVal) ->
+            // TODO: could we just elide the whole definition if there is no value.
+            //       do we need to start considering expressions and statements
+            //       as disjoint things?
+            match maybeVal with
+            | Some(expr) -> recurse expr
+            | None -> ctx.IL.Emit(OpCodes.Ldnull)
+            ctx.IL.Emit(OpCodes.Dup)
+            match storage with
+            | Expression.Storage.Global id ->
+                let field = ensureField ctx id
+                ctx.IL.Emit(OpCodes.Stsfld, field)
+            | Expression.Storage.Local(idx) ->
+                ctx.IL.Emit(OpCodes.Stloc, idx)
+            | Expression.Storage.Argument(idx) ->
+                ctx.IL.Emit(OpCodes.Starg, idx)
+        | Expression.ELoad storage ->
+            match storage with
+            | Expression.Storage.Global id ->
+                let field = ensureField ctx id
+                ctx.IL.Emit(OpCodes.Ldsfld, field)
+            | Expression.Storage.Local(idx) ->
+                ctx.IL.Emit(OpCodes.Ldloc, idx)
+            | Expression.Storage.Argument(idx) ->
+                ctx.IL.Emit(OpCodes.Ldarg, idx)
+        //| Expression.If(cond, ifTrue, maybeIfFalse) ->
+        //    recurse cond
+        //    let lblFalse = ctx.IL.Create(OpCodes.Nop)
+        //    let lblEnd = ctx.IL.Create(OpCodes.Nop)
+        //    ctx.IL.Emit(OpCodes.Brfalse_S, lblFalse)
+        //    recurse ifTrue
+        //    ctx.IL.Emit(OpCodes.Br_S, lblEnd)
+        //    ctx.IL.Append(lblFalse)
+        //    match maybeIfFalse with
+        //    | Some ifFalse -> recurse ifFalse
+        //    | None -> ctx.IL.Emit(OpCodes.Ldnull)
+        //    ctx.IL.Append(lblEnd)
+        | Expression.EAbstraction(formals, body) ->
+            emitLambda ctx formals body
+    and emitSequence ctx seq =
+        let popAndEmit x =
+            ctx.IL.Emit(OpCodes.Pop)
+            emitExpression ctx x
+        emitExpression ctx (List.head seq)
+        List.tail seq
+        |>  Seq.iter popAndEmit
+    and emitAuxLambda (ctx: EmitCtx) name formals body =
+        let methodDecl = MethodDefinition(name,
+                                          MethodAttributes.Public ||| MethodAttributes.Static,
+                                          ctx.Assm.MainModule.TypeSystem.Object)
+        ctx.ProgramTy.Methods.Add methodDecl
+
+        let addParam id =
+            methodDecl.Parameters.Add(ParameterDefinition(id, ParameterAttributes.None, ctx.Assm.MainModule.TypeSystem.Object))
+
+        // Add formals as parameter definitions
+        List.map addParam formals |> ignore
+
+        let ctx = { IL = methodDecl.Body.GetILProcessor()
+                  ; ProgramTy = ctx.ProgramTy
+                  ; NextLambda = 0
+                  ; ScopePrefix = name
+                  ; Assm = ctx.Assm }
+        emitExpression ctx body
+        ctx.IL.Emit(OpCodes.Ret)
+        methodDecl.Body.Optimize()
+
+        // Emit a thunk that unpacks the arguments to our method
+        // This allows us to provide a uniform calling convention for
+        // lambda instances
+        let thunkDecl = MethodDefinition((sprintf "%s:thunk" name),
+                                          MethodAttributes.Public ||| MethodAttributes.Static,
+                                          ctx.Assm.MainModule.TypeSystem.Object)
+        thunkDecl.Parameters.Add(ParameterDefinition(ArrayType(ctx.Assm.MainModule.TypeSystem.Object)))
+        ctx.ProgramTy.Methods.Add thunkDecl
+        let thunkIl = thunkDecl.Body.GetILProcessor()
+
+        let unpackArg (idx: int) id =
+            thunkIl.Emit(OpCodes.Ldarg_0)
+            thunkIl.Emit(OpCodes.Ldc_I4, idx)
+            thunkIl.Emit(OpCodes.Ldelem_Ref)
+            idx + 1
+
+        List.fold unpackArg 0 formals |> ignore
+        thunkIl.Emit(OpCodes.Call, methodDecl)
+        thunkIl.Emit(OpCodes.Ret)
+        thunkDecl.Body.Optimize()
+
+        methodDecl, thunkDecl
+    and emitApplication ctx ap args =
+        match ap with
+        | Expression.EAtom value -> 
+            // Emit the arguments array
+            ctx.IL.Emit(OpCodes.Ldc_I4, List.length args)
+            ctx.IL.Emit(OpCodes.Newarr, ctx.Assm.MainModule.TypeSystem.Object)
+            List.fold (fun (idx: int) e -> 
+                ctx.IL.Emit(OpCodes.Dup)
+                ctx.IL.Emit(OpCodes.Ldc_I4, idx)
+                emitExpression ctx e
+                ctx.IL.Emit(OpCodes.Stelem_Ref)
+                idx + 1) 0 args |> ignore
+            
+            let path = value.Split('.')
+            let module' = 
+                String.Join('.', (Array.rev >> Array.tail) path)
+                |> ctx.Assm.MainModule.GetType
+                |> _.GetType()
+            let methodName = Array.last path
+            let params = List.map (fun x -> ) args
+            let x = ctx.Assm.MainModule.ImportReference(module'.GetMethod(methodName, ))
+
+            let lambdaId = ctx.NextLambda
+            ctx.NextLambda <- lambdaId + 1
+            let _, thunk = emitAuxLambda ctx (sprintf "%s:lambda%d" ctx.ScopePrefix lambdaId) args 
+            let paramTypes = [|typeof<obj>; typeof<IntPtr>|]
+            let funcObjCtor = ctx.Assm.MainModule.ImportReference(typeof<System.Func<obj[], obj>>.GetConstructor(paramTypes))
+            ctx.IL.Emit(OpCodes.Ldnull)
+            ctx.IL.Emit(OpCodes.Ldftn, thunk :> MethodReference)
+            ctx.IL.Emit(OpCodes.Newobj, funcObjCtor)
+
+        | _ ->
+            failwith "Bad application!"
+
+        //let funcInvoke = ctx.Assm.MainModule.ImportReference(typeof<System.Func<obj[], obj>>.GetMethod("Invoke", [| typeof<obj[]> |]))
+        //ctx.IL.Emit(OpCodes.Callvirt, funcInvoke)
+    and emitLambda ctx formals body =
+        // Emit a declaration for the lambda's implementation
+        let lambdaId = ctx.NextLambda
+        ctx.NextLambda <- lambdaId + 1
+        let _, thunk = emitNamedLambda ctx (sprintf "%s:lambda%d" ctx.ScopePrefix lambdaId) formals body
+        let paramTypes = [|typeof<obj>; typeof<IntPtr>|]
+        let funcObjCtor = ctx.Assm.MainModule.ImportReference(typeof<System.Func<obj[], obj>>.GetConstructor(paramTypes))
+        ctx.IL.Emit(OpCodes.Ldnull)
+        ctx.IL.Emit(OpCodes.Ldftn, thunk :> MethodReference)
+        ctx.IL.Emit(OpCodes.Newobj, funcObjCtor)
+    and emitNamedLambda (ctx: EmitCtx) name formals body =
+        let methodDecl = MethodDefinition(name,
+                                          MethodAttributes.Public ||| MethodAttributes.Static,
+                                          ctx.Assm.MainModule.TypeSystem.Object)
+        ctx.ProgramTy.Methods.Add methodDecl
+
+        let addParam id =
+            methodDecl.Parameters.Add(ParameterDefinition(id, ParameterAttributes.None, ctx.Assm.MainModule.TypeSystem.Object))
+
+        // Add formals as parameter definitions
+        List.map addParam formals |> ignore
+
+        let ctx = { IL = methodDecl.Body.GetILProcessor()
+                  ; ProgramTy = ctx.ProgramTy
+                  ; NextLambda = 0
+                  ; ScopePrefix = name
+                  ; Assm = ctx.Assm }
+        emitExpression ctx body
+        ctx.IL.Emit(OpCodes.Ret)
+        methodDecl.Body.Optimize()
+
+        // Emit a thunk that unpacks the arguments to our method
+        // This allows us to provide a uniform calling convention for
+        // lambda instances
+        let thunkDecl = MethodDefinition((sprintf "%s:thunk" name),
+                                          MethodAttributes.Public ||| MethodAttributes.Static,
+                                          ctx.Assm.MainModule.TypeSystem.Object)
+        thunkDecl.Parameters.Add(ParameterDefinition(ArrayType(ctx.Assm.MainModule.TypeSystem.Object)))
+        ctx.ProgramTy.Methods.Add thunkDecl
+        let thunkIl = thunkDecl.Body.GetILProcessor()
+
+        let unpackArg (idx: int) id =
+            thunkIl.Emit(OpCodes.Ldarg_0)
+            thunkIl.Emit(OpCodes.Ldc_I4, idx)
+            thunkIl.Emit(OpCodes.Ldelem_Ref)
+            idx + 1
+
+        List.fold unpackArg 0 formals |> ignore
+        thunkIl.Emit(OpCodes.Call, methodDecl)
+        thunkIl.Emit(OpCodes.Ret)
+        thunkDecl.Body.Optimize()
+
+        methodDecl, thunkDecl
+
+    /// Emit the `Main` Method Epilogue
+    ///
+    /// This sequence of instructions is added at the end of the main method to
+    /// coerce the result type into a return value for the application. Once we have
+    /// some form of runtime library linked into the final executable it might be
+    /// best to include this in there rather than emitting it manually each time.
+    let private emitMainEpilogue (assm: AssemblyDefinition) (il: ILProcessor) =
+        il.Emit(OpCodes.Dup)
+        
+        il.Emit(OpCodes.Call, assm.MainModule.ImportReference (typeof<Console>.GetMethod("WriteLine", [| typeof<obj> |])))
+        
+        //il.Emit(OpCodes.Dup)
+        //il.Emit(OpCodes.Isinst, assm.MainModule.TypeSystem.Double)
+        //let notInt = il.Create(OpCodes.Dup)
+        //il.Emit(OpCodes.Brfalse, notInt)
+
+        //il.Emit(OpCodes.Unbox_Any, assm.MainModule.TypeSystem.Double)
+        //il.Emit(OpCodes.Conv_I4)
+        //il.Emit(OpCodes.Ret)
+
+        //il.Append(notInt)
+        //let notBool = il.Create(OpCodes.Pop)
+        //il.Emit(OpCodes.Isinst, assm.MainModule.TypeSystem.Boolean)
+        //il.Emit(OpCodes.Brfalse, notBool)
+        //il.Emit(OpCodes.Unbox_Any, assm.MainModule.TypeSystem.Boolean)
+        //let load0 = il.Create(OpCodes.Ldc_I4_0)
+        //il.Emit(OpCodes.Brtrue, load0)
+        //il.Emit(OpCodes.Ldc_I4_M1)
+        //il.Emit(OpCodes.Ret)
+
+        //il.Append(notBool)
+        //il.Append(load0)
+        il.Emit(OpCodes.Pop)
+        il.Emit(OpCodes.Ldc_I4, 0)
+        il.Emit(OpCodes.Ret)
+
+    /// Create an Empty Object Constructor
+    ///
+    /// Creates a constructor method deifnition that just calls the parent constructor
+    let private createEmptyCtor (assm: AssemblyDefinition) =
+        let ctor = MethodDefinition(".ctor",
+                                    MethodAttributes.Public ||| MethodAttributes.HideBySig ||| MethodAttributes.SpecialName ||| MethodAttributes.RTSpecialName,
+                                    assm.MainModule.TypeSystem.Void)
+        let objConstructor = assm.MainModule.ImportReference(typeof<obj>.GetConstructor(Array.empty))
+        let il = ctor.Body.GetILProcessor()
+        il.Emit(OpCodes.Ldarg_0)
+        il.Emit(OpCodes.Call, objConstructor)
+        il.Emit(OpCodes.Ret)
+        ctor
+
+    /// Emit a Bound Expression to .NET
+    ///
+    /// Creates an assembly and writes out the .NET interpretation of the
+    /// given bound tree. This method is responsible for creating the root
+    /// `LispProgram` type and preparting the emit context. The main work of
+    /// lowering is done by `emitNamedLambda`.
+    let emit (outputStream: Stream) outputName bound =
+        // Create an assembly with a nominal version to hold our code
+        let name = AssemblyNameDefinition(outputName, Version(0, 0, 0))
+        let assm = AssemblyDefinition.CreateAssembly(name, "lisp_module", ModuleKind.Console)
+        
+        // Genreate a nominal type to contain the methods for this program.
+        let progTy = TypeDefinition(outputName,
+                                    "LispProgram",
+                                    TypeAttributes.Class ||| TypeAttributes.Public ||| TypeAttributes.AnsiClass,
+                                    assm.MainModule.TypeSystem.Object)
+        assm.MainModule.Types.Add progTy
+        progTy.Methods.Add <| createEmptyCtor assm
+
+        // Emit the body of the script to a separate method so that the `Eval`
+        // module can call it directly
+        let rootEmitCtx = { IL = null
+                          ; ProgramTy = progTy
+                          ; NextLambda = 0
+                          ; ScopePrefix = "$ROOT"
+                          ; Assm = assm }
+        let bodyMethod, _ = emitNamedLambda rootEmitCtx "$ScriptBody" [] bound
+
+        // The `Main` method is the entry point of the program. It calls
+        // `$ScriptBody` and coerces the return value to an exit code.
+        let mainMethod = MethodDefinition("Main",
+                                          MethodAttributes.Public ||| MethodAttributes.Static,
+                                          assm.MainModule.TypeSystem.Int32)
+        mainMethod.Parameters.Add(ParameterDefinition(ArrayType(assm.MainModule.TypeSystem.String)))
+        progTy.Methods.Add mainMethod
+        assm.EntryPoint <- mainMethod
+        let il = mainMethod.Body.GetILProcessor()
+
+        il.Emit(OpCodes.Call, bodyMethod)
+        emitMainEpilogue assm il
+
+        // Write our `Assembly` to the output stream now we are done.
+        assm.Write outputStream
+        assm
+
+    /// Compile a single AST node into an assembly
+    ///
+    /// The plan for this is we make multiple passes over the syntax tree. First
+    /// pass will be to `bind` theh tree. Resulting in a `Expression`. This will
+    /// attach any type information that _can_ be computed to each node, and
+    /// resolve variable references to the symbols that they refer to.
+    ///
+    /// Once the expression is bound we will then `emit` the expression this walks
+    /// the expression and writes out the corresponding .NET IL to an `Assembly`
+    /// at `outputStream`. The `outputName` controls the root namespace and assembly
+    /// name of the output.
+    let compile outputStream outputName =
+        //let scope = createRootScope
+        //bind scope node |> 
+        emit outputStream outputName
+
+    /// Read a File and Compile
+    ///
+    /// Takes the `path` to an input to read and compile.
+    //let compileFile (path: string) =
+    //    let output = Path.ChangeExtension(path, "exe")
+    //    let stem = Path.GetFileNameWithoutExtension(path);
+    //    parseFile path
+    //    |> Result.map (fun ast ->
+    //        compile (File.OpenWrite output) stem ast
+    //        // TOOD: This metadata needs to be abstracted to deal with different
+    //        //       target framework's prefrences. For now the `.exe` we generate
+    //        //       is compatible with .NET Core and Mono. It would be nice to make
+    //        //       this explicit somewhere in future.
+    //        //       It would be nice to register ourselves as a proper SDK so that
+    //        //       this metadata is generated for us by `dotnet`.
+    //        File.WriteAllText(Path.Combine(Path.GetDirectoryName(path), stem + ".runtimeconfig.json"), """
+    //        {
+    //          "runtimeOptions": {
+    //            "tfm": "netcoreapp3.0",
+    //            "framework": {
+    //              "name": "Microsoft.NETCore.App",
+    //              "version": "3.0.0"
+    //            }
+    //          }
+    //        }
+    //        """))
+    let eval ast =
+        let memStream = new MemoryStream()
+        let bytecode = compile memStream "evalCtx" ast
+        let assm = System.Reflection.Assembly.Load(memStream.ToArray())
+        let progTy = assm.GetType("evalCtx.LispProgram")
+        // TODO: Instead of calling `$ScriptBody` here should we bind a custom
+        //       function definition and call that instead? e.g.: 
+        //       
+        //       ```scheme
+        ///      (define (evalEntry) <ast>)
+        ///      ```
+        //let mainMethod = progTy.GetMethod("$ScriptBody")
+        //mainMethod.Invoke(null, Array.empty<obj>) |> printfn "RETURN: %A"
+        //let mainMethod = progTy.GetMethod("Main")
+        //mainMethod.Invoke(null, [||])
+
+        bytecode.Write "C:/Users/mague/Source/Repos/ChimeLisp/Test.exe"
+        File.WriteAllText("C:/Users/mague/Source/Repos/ChimeLisp/test.runtimeconfig.json", """
+        {
+          "runtimeOptions": {
+            "tfm": "net8.0",
+            "framework": {
+              "name": "Microsoft.NETCore.App",
+              "version": "8.0.0"
+            }
+          }
+        }
+        """)
+
+        File.WriteAllText("C:/Users/mague/Source/Repos/ChimeLisp/test.deps.json", """
+        {
+          "runtimeTarget": {
+            "name": ".NETCoreApp,Version=v8.0",
+            "signature": ""
+          },
+          "compilationOptions": {}
+        }
+        """)
 end

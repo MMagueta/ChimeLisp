@@ -37,11 +37,12 @@ module REPL = begin
                     match read (text + line) with
                     | Ok ast ->
                         try
-                            let _, env =
-                                ast
-                                |> List.map Language.Generator.expand
-                                |> Language.Generator.wrapper true
-                            in loop false "" env
+                            //let _, env =
+                                //ast
+                                //|> List.map Language.Generator.expand
+                                //|> Language.Generator.wrapper true
+                            //in loop false "" envS
+                            failwith "NOT IMPLEMENTED"
                         with e ->
                             printfn "ERROR => %A" e
                             loop false "" env

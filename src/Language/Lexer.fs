@@ -89,7 +89,7 @@ and tokenStream  lexbuf =
           )
   | 1 -> ( 
 # 34 "Lexer.fsl"
-                           Parser.SYMBOL (LexBuffer<_>.LexemeString lexbuf) 
+                               Parser.SYMBOL (LexBuffer<_>.LexemeString lexbuf) 
 # 93 "Lexer.fs"
           )
   | 2 -> ( 
